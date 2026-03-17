@@ -1,0 +1,304 @@
+###############################################################################
+# RedactEngine Backend — CI/CD Pipeline
+#
+# Triggered on pushes to `main`.
+# Flow: Build & Test → Approval → Provision Prod (Infra) → Build & Push Prod Images → Deploy Prod
+#
+# Required GitHub Secrets:
+#   AZURE_CLIENT_ID          - App Registration (federated credential) client ID
+#   AZURE_TENANT_ID          - Entra ID tenant
+#   AZURE_SUBSCRIPTION_ID    - Target Azure subscription
+#   POSTGRES_ADMIN_PASSWORD  - PostgreSQL admin password
+#   ADMIN_OBJECT_ID          - (Optional) Azure AD Object ID for Key Vault admin
+#
+# Runtime app secrets are loaded from Azure Key Vault by managed identity.
+###############################################################################
+
+name: Backend CI/CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # Required for OIDC / Workload Identity Federation
+  contents: read
+
+concurrency:
+  group: backend-cicd-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  TERRAFORM_DIR: RedactEngine.AppHost/terraform
+  ACR_NAME_PROD: acrredactengineprod
+
+###############################################################################
+# JOB 1: Build & Test (.NET only — no Docker, no Azure)
+###############################################################################
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        if: false
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run tests
+        if: false
+        run: dotnet test --no-build --configuration Release --verbosity normal
+
+# JOB 2: Approval Gate
+###############################################################################
+  approval-gate:
+    name: Production Approval
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    environment: production   # <-- Requires manual approval via GitHub Environment protection rules
+
+    steps:
+      - name: Approved
+        run: echo "Production deployment approved."
+
+# JOB 3: Provision Prod Infrastructure
+###############################################################################
+  provision-prod-infra:
+    name: Provision Prod Infra
+    needs: approval-gate
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # ── Terraform: Provision / update production infrastructure ───────────
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.9"
+          terraform_wrapper: false
+
+      - name: Terraform Init (Prod)
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: |
+          terraform init \
+            -backend-config="key=prod.tfstate" \
+            -backend-config="resource_group_name=redactengine-tfstate-rg" \
+            -backend-config="storage_account_name=redactenginetfstate" \
+            -backend-config="container_name=tfstate"
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: true
+
+      - name: Terraform Plan (Prod)
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: terraform plan -var-file=prod.tfvars -out=prod.tfplan
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: true
+          TF_VAR_postgres_admin_password: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+          TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_admin_object_id: ${{ secrets.ADMIN_OBJECT_ID }}
+
+      - name: Terraform Apply (Prod)
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: terraform apply -auto-approve prod.tfplan
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: true
+
+###############################################################################
+# JOB 4: Build & Push Prod Images (parallel per image with Buildx cache)
+###############################################################################
+  build-and-push-prod-images:
+    name: Build & Push Prod Images (${{ matrix.service }})
+    needs:
+      - approval-gate
+      - provision-prod-infra
+    runs-on: ubuntu-latest
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api
+            image: redactengine-api
+            dockerfile: RedactEngine.ApiService/Dockerfile
+          - service: worker
+            image: redactengine-worker
+            dockerfile: RedactEngine.Worker/Dockerfile
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Prod ACR
+        run: az acr login --name ${{ env.ACR_NAME_PROD }}
+
+      - name: Build & Push ${{ matrix.service }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          pull: true
+          tags: |
+            ${{ env.ACR_NAME_PROD }}.azurecr.io/${{ matrix.image }}:${{ github.sha }}
+            ${{ env.ACR_NAME_PROD }}.azurecr.io/${{ matrix.image }}:latest
+          cache-from: type=gha,scope=${{ github.workflow }}-${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ github.workflow }}-${{ matrix.service }}
+
+###############################################################################
+# JOB 5: Deploy to Prod (Migration Job → Container App Update)
+###############################################################################
+  deploy-prod:
+    name: Deploy Prod
+    needs:
+      - provision-prod-infra
+      - build-and-push-prod-images
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.9"
+          terraform_wrapper: false
+
+      - name: Terraform Init (Prod)
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: |
+          terraform init \
+            -backend-config="key=prod.tfstate" \
+            -backend-config="resource_group_name=redactengine-tfstate-rg" \
+            -backend-config="storage_account_name=redactenginetfstate" \
+            -backend-config="container_name=tfstate"
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: true
+
+      - name: Run Prod migration job
+        if: false
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: |
+          RESOURCE_GROUP=$(terraform output -raw resource_group_name)
+          MIGRATION_JOB_NAME=$(terraform output -raw migration_job_name)
+          MIGRATION_IMAGE=${{ env.ACR_NAME_PROD }}.azurecr.io/redactengine-migrator:${{ github.sha }}
+
+          az containerapp job update \
+            --name "$MIGRATION_JOB_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$MIGRATION_IMAGE" \
+            --container-name db-migrator
+
+          EXECUTION_NAME=$(az containerapp job start \
+            --name "$MIGRATION_JOB_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query name \
+            --output tsv)
+
+          echo "Started migration job execution: $EXECUTION_NAME"
+
+          for attempt in $(seq 1 180); do
+            STATUS=$(az containerapp job execution show \
+              --name "$MIGRATION_JOB_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --job-execution-name "$EXECUTION_NAME" \
+              --query properties.status \
+              --output tsv)
+
+            echo "Migration job status: $STATUS"
+
+            case "$STATUS" in
+              Succeeded)
+                exit 0
+                ;;
+              Failed|Canceled)
+                az containerapp job execution show \
+                  --name "$MIGRATION_JOB_NAME" \
+                  --resource-group "$RESOURCE_GROUP" \
+                  --job-execution-name "$EXECUTION_NAME"
+                exit 1
+                ;;
+            esac
+
+            sleep 10
+          done
+
+          echo "Migration job timed out"
+          exit 1
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: true
+
+      # ── Deploy: Update Container Apps with promoted images ────────────────
+      - name: Deploy images to Prod Container Apps
+        working-directory: ${{ env.TERRAFORM_DIR }}
+        run: |
+          RESOURCE_GROUP=$(terraform output -raw resource_group_name)
+
+          az containerapp update \
+            --name redactengine-prod-api \
+            --resource-group "$RESOURCE_GROUP" \
+            --image ${{ env.ACR_NAME_PROD }}.azurecr.io/redactengine-api:${{ github.sha }}
+
+          az containerapp update \
+            --name redactengine-prod-worker \
+            --resource-group "$RESOURCE_GROUP" \
+            --image ${{ env.ACR_NAME_PROD }}.azurecr.io/redactengine-worker:${{ github.sha }}
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: true

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-RedactEngine.Worker-a1b2c3d4-e5f6-4a5b-9c8d-1e2f3a4b5c6d</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Properties\launchSettings.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RedactEngine.ServiceDefaults\RedactEngine.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\RedactEngine.Application\RedactEngine.Application.csproj" />
+    <ProjectReference Include="..\RedactEngine.Infrastructure\RedactEngine.Infrastructure.csproj" />
+    <ProjectReference Include="..\RedactEngine.Shared\RedactEngine.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="13.1.1" />
+    <PackageReference Include="Dapr.AspNetCore" Version="1.17.4" />
+    <PackageReference Include="Dapr.Client" Version="1.17.4" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.3" />
+  </ItemGroup>
+
+</Project>
