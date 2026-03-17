@@ -1,0 +1,16 @@
+.git
+.github
+.vs
+**/bin/
+**/obj/
+**/artifacts/
+**/TestResults/
+
+docs/
+test-scripts/
+RedactEngine.AppHost/
+
+README.md
+claude.md
+Rename-Project.ps1
+rename.ps1

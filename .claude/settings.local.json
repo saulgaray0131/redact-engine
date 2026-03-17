@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:resend.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(find d:/Github/ContentPlatformBackend -name *BranchStepHandlerTests.cs -o -name *BranchStepHandler*Test*.cs)"
+    ]
+  }
+}
