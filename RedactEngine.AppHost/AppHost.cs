@@ -10,7 +10,9 @@ var infrastructureOptions = EnvironmentSettings.GetInfrastructureOptions();
 var (_, database) = builder.AddRedactEnginePostgres(infrastructureOptions);
 var (_, blobs) = builder.AddRedactEngineStorage(infrastructureOptions);
 
-builder.AddRedactEngineApiService("redact-engine-api-service", database, blobs, infrastructureOptions);
+var apiService = builder.AddRedactEngineApiService("redact-engine-api-service", database, blobs, infrastructureOptions);
 builder.AddRedactEngineWorkerService("redact-engine-worker", database, blobs, infrastructureOptions);
+
+builder.AddRedactEngineWeb("redact-engine-web", apiService);
 
 builder.Build().Run();

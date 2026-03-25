@@ -363,3 +363,4 @@ MigrationBackup/
 FodyWeavers.xsd
 RedactEngine.AppHost/terraform/.terraform.lock.hcl
 RedactEngine.AppHost/terraform/.terraform/providers/*
+RedactEngine.Web/dist
