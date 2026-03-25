@@ -22,6 +22,7 @@ public static class ServiceCollectionExtensions
         services.AddApplication();
         services.AddInfrastructure(configuration);
         services.AddDaprClient();
+        services.AddCors();
 
         return services;
     }

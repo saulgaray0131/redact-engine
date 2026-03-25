@@ -1,4 +1,5 @@
 using Aspire.Hosting.Azure;
+using Aspire.Hosting.JavaScript;
 using CommunityToolkit.Aspire.Hosting.Dapr;
 using RedactEngine.AppHost.Infrastructure.Configuration;
 
@@ -50,5 +51,18 @@ public static class ServiceExtensions
             .WaitFor(blobs)
             .WithEnvironment("DOTNET_ENVIRONMENT", options.Environment)
             .WithEnvironment("ASPNETCORE_ENVIRONMENT", options.Environment);
+    }
+
+    public static IResourceBuilder<ViteAppResource> AddRedactEngineWeb(
+        this IDistributedApplicationBuilder builder,
+        string serviceName,
+        IResourceBuilder<ProjectResource> apiService)
+    {
+        return builder.AddViteApp(serviceName, "../RedactEngine.Web")
+            .WithPnpm()
+            .WithReference(apiService)
+            .WaitFor(apiService)
+            .WithEnvironment("BROWSER", "none")
+            .WithEnvironment("VITE_API_BASE_URL", apiService.GetEndpoint("https"));
     }
 }

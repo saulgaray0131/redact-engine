@@ -12,6 +12,12 @@ public static class ApplicationBuilderExtensions
     public static WebApplication UseRedactEnginePipeline(this WebApplication app)
     {
         app.UseGlobalExceptionHandler();
+
+        app.UseCors(policy => policy
+            .AllowAnyOrigin()
+            .AllowAnyMethod()
+            .AllowAnyHeader());
+
         if (app.Environment.IsEnvironment("Local"))
         {
             app.UseHttpsRedirection();

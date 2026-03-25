@@ -1,0 +1,32 @@
+# Project Guidelines
+
+## Architecture
+- RedactEngine uses pragmatic DDD. Keep domain rules, invariants, and domain events in `RedactEngine.Domain`.
+- Keep application orchestration, validation, and service contracts in `RedactEngine.Application`.
+- Keep EF Core persistence, external integrations, and infrastructure wiring in `RedactEngine.Infrastructure`.
+- Keep `RedactEngine.ApiService` controllers and `RedactEngine.Worker` processes thin. Put reusable logic in application or infrastructure services.
+- Treat `RedactEngine.AppHost` as Aspire orchestration and environment composition only, not a place for business logic.
+- Use `RedactEngine.Shared` only for cross-service contracts. Use `RedactEngine.ServiceDefaults` only for shared hosting, telemetry, health, and resilience setup.
+
+## Data Access
+- Use `ApplicationDbContext` or `IApplicationDbContext` directly from services through dependency injection.
+- Do not add repository abstractions for normal CRUD or query composition.
+- Use `IUnitOfWork` only for persistence boundaries when needed, backed by the EF Core context.
+- Keep entity configuration, migrations, and database-specific concerns in Infrastructure.
+- Preserve the existing domain-event plus outbox pattern for transactional event capture.
+
+## Simplicity
+- Do not introduce CQRS request/handler layers for routine commands and queries.
+- Prefer straightforward service methods and thin HTTP or worker entry points over extra abstraction.
+- Existing MediatR usage is limited to domain-event notification plumbing. Do not expand it into a general command/query architecture unless the project direction changes.
+
+## Build And Run
+- Build the solution with `dotnet build RedactEngine.sln`.
+- Publish the solution with `dotnet publish RedactEngine.sln`.
+- Use `dotnet watch run --project RedactEngine.sln` for local watch runs through Aspire.
+- There are currently no test projects in the solution. If tests are added, keep them focused on application and infrastructure behavior.
+
+## Infrastructure
+- The primary stack is ASP.NET Core, EF Core, PostgreSQL, Azure Blob Storage or Azurite, Aspire, and Terraform.
+- Keep infrastructure and environment-specific configuration in AppHost, Infrastructure, appsettings, and Terraform rather than leaking it into Domain or Application.
+- Preserve the existing health, telemetry, and service-defaults wiring unless a task explicitly requires changing it.
