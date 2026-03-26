@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "RedactEngine.Web/**"
+      - ".github/workflows/frontend-cicd.yml"
 
 permissions:
   id-token: write
