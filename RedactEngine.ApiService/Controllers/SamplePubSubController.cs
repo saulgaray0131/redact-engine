@@ -5,7 +5,7 @@ using RedactEngine.Shared.PubSub;
 namespace RedactEngine.ApiService.Controllers;
 
 [ApiController]
-[Route("api/samples/pubsub")]
+[Route("samples/pubsub")]
 public sealed class SamplePubSubController(DaprClient daprClient) : ControllerBase
 {
     [HttpPost]
