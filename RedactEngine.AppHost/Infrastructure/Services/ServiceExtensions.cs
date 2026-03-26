@@ -58,11 +58,15 @@ public static class ServiceExtensions
         string serviceName,
         IResourceBuilder<ProjectResource> apiService)
     {
-        return builder.AddViteApp(serviceName, "../RedactEngine.Web")
+        return builder.AddViteApp(serviceName, "../RedactEngine.Web", "dev")
             .WithPnpm()
+            .WithEndpoint("http", endpoint =>
+            {
+                endpoint.Port = 5173;
+                endpoint.IsProxied = false;
+            })
             .WithReference(apiService)
             .WaitFor(apiService)
-            .WithEnvironment("BROWSER", "none")
-            .WithEnvironment("VITE_API_BASE_URL", apiService.GetEndpoint("https"));
+            .WithEnvironment("ASPIRE", "true");
     }
 }
