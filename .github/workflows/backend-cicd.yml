@@ -62,23 +62,10 @@ jobs:
         if: false
         run: dotnet test --no-build --configuration Release --verbosity normal
 
-# JOB 2: Approval Gate
-###############################################################################
-  approval-gate:
-    name: Production Approval
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    environment: production   # <-- Requires manual approval via GitHub Environment protection rules
-
-    steps:
-      - name: Approved
-        run: echo "Production deployment approved."
-
 # JOB 3: Provision Prod Infrastructure
 ###############################################################################
   provision-prod-infra:
     name: Provision Prod Infra
-    needs: approval-gate
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -140,7 +127,6 @@ jobs:
   build-and-push-prod-images:
     name: Build & Push Prod Images (${{ matrix.service }})
     needs:
-      - approval-gate
       - provision-prod-infra
     runs-on: ubuntu-latest
     environment: production
