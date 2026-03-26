@@ -2,9 +2,16 @@ import { Settings } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useTheme } from '@/providers/theme-provider'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { getHealthDetailedOptions, postSamplesPubsubMutation } from '@/client/@tanstack/react-query.gen'
+import { appConfig } from '@/config/app-config'
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
+  const health = useQuery(getHealthDetailedOptions())
+  const samplePubSub = useMutation({
+    ...postSamplesPubsubMutation(),
+  })
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
@@ -27,9 +34,58 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle>Backend</CardTitle>
           <CardDescription>
-            API endpoint: configured via VITE_API_BASE_URL environment variable.
+            API endpoint: {appConfig.apiBaseUrl}
           </CardDescription>
         </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">Status:</span>
+              {health.isLoading && <span className="text-sm text-muted-foreground">Checking...</span>}
+              {health.isError && <span className="text-sm text-destructive">Unreachable</span>}
+              {health.data && (
+                <span className="text-sm text-green-600 dark:text-green-400">
+                  {health.data.status} — v{health.data.version} ({health.data.environment})
+                </span>
+              )}
+            </div>
+            <Button variant="outline" size="sm" className="w-fit" onClick={() => health.refetch()}>
+              Refresh
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Sample Pub/Sub</CardTitle>
+          <CardDescription>
+            Test the Dapr pub/sub integration by publishing a sample message.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-fit"
+              disabled={samplePubSub.isPending}
+              onClick={() => samplePubSub.mutate({ body: { message: 'Hello from the frontend!', source: 'RedactEngine.Web' } })}
+            >
+              {samplePubSub.isPending ? 'Publishing...' : 'Publish Test Message'}
+            </Button>
+            {samplePubSub.isSuccess && (
+              <p className="text-sm text-green-600 dark:text-green-400">
+                Published to {samplePubSub.data.topic} (event: {samplePubSub.data.eventId})
+              </p>
+            )}
+            {samplePubSub.isError && (
+              <p className="text-sm text-destructive">
+                Failed: {samplePubSub.error.message}
+              </p>
+            )}
+          </div>
+        </CardContent>
       </Card>
 
       <Card>

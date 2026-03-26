@@ -67,6 +67,7 @@ public static class ServiceExtensions
             })
             .WithReference(apiService)
             .WaitFor(apiService)
-            .WithEnvironment("ASPIRE", "true");
+            .WithEnvironment("ASPIRE", "true")
+            .WithEnvironment("VITE_API_BASE_URL", apiService.GetEndpoint("https"));
     }
 }

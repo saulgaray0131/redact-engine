@@ -63,12 +63,6 @@ variable "worker_config" {
   description = "Scaling and sizing config for Worker Service"
 }
 
-# --- CORS Variables ---
-variable "cors_allowed_origins" {
-  type        = list(string)
-  description = "Frontend origins allowed for CORS (e.g., https://dev.redactengine.net)"
-}
-
 # --- Security Variables ---
 variable "admin_object_id" {
   type        = string
