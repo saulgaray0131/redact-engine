@@ -22,7 +22,7 @@ resource "azurerm_servicebus_namespace_authorization_rule" "dapr_pubsub" {
 
   listen = true
   send   = true
-  manage = false
+  manage = true
 }
 
 resource "azurerm_container_app_environment_dapr_component" "pubsub" {
