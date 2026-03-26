@@ -94,7 +94,7 @@ resource "azurerm_container_app" "api" {
         port      = 8080
 
         initial_delay    = 5
-        interval_seconds = 600
+        interval_seconds = 240
         timeout          = 5
         failure_count_threshold = 3
       }
@@ -104,7 +104,7 @@ resource "azurerm_container_app" "api" {
         path      = "/health"
         port      = 8080
 
-        interval_seconds = 600
+        interval_seconds = 240
         timeout          = 5
         failure_count_threshold = 3
       }
