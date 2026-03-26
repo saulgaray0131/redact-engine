@@ -58,9 +58,17 @@ jobs:
         run: pnpm build
         working-directory: ${{ env.APP_LOCATION }}
 
-      - name: Clean node_modules before deploy
-        run: rm -rf node_modules
-        working-directory: ${{ env.APP_LOCATION }}
+      - name: Debug deploy directory
+        run: |
+          echo "=== Resolved app_location: /${{ env.APP_LOCATION }}/${{ env.OUTPUT_LOCATION }} ==="
+          echo "=== Contents of ${{ env.APP_LOCATION }}/${{ env.OUTPUT_LOCATION }}: ==="
+          ls -la ${{ env.APP_LOCATION }}/${{ env.OUTPUT_LOCATION }}
+          echo "=== Total size of app_location: ==="
+          du -sh ${{ env.APP_LOCATION }}/${{ env.OUTPUT_LOCATION }}
+          echo "=== Total size of ${{ env.APP_LOCATION }} (parent): ==="
+          du -sh ${{ env.APP_LOCATION }}
+          echo "=== Largest dirs under ${{ env.APP_LOCATION }}: ==="
+          du -h --max-depth=1 ${{ env.APP_LOCATION }} | sort -rh | head -10
 
       - name: Deploy to Azure Static Web Apps (Production)
         id: deploy
@@ -69,5 +77,5 @@ jobs:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: upload
-          app_location: "${{ env.APP_LOCATION }}/${{ env.OUTPUT_LOCATION }}"
+          app_location: "/${{ env.APP_LOCATION }}/${{ env.OUTPUT_LOCATION }}"
           skip_app_build: true
