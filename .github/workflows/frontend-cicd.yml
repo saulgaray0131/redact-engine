@@ -16,8 +16,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  APP_LOCATION: "RedactEngine.Web"
-  OUTPUT_LOCATION: "dist"
+  WEB_DIR: "RedactEngine.Web"
+  BUILD_OUTPUT: "dist"
 
 jobs:
   deploy-prod:
@@ -44,31 +44,19 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-        working-directory: ${{ env.APP_LOCATION }}
+        working-directory: ${{ env.WEB_DIR }}
 
       - name: Generate API client
         run: pnpm openapi-ts
-        working-directory: ${{ env.APP_LOCATION }}
+        working-directory: ${{ env.WEB_DIR }}
 
       - name: Lint
         run: pnpm lint
-        working-directory: ${{ env.APP_LOCATION }}
+        working-directory: ${{ env.WEB_DIR }}
 
       - name: Build
         run: pnpm build
-        working-directory: ${{ env.APP_LOCATION }}
-
-      - name: Debug deploy directory
-        run: |
-          echo "=== Resolved app_location: /${{ env.APP_LOCATION }}/${{ env.OUTPUT_LOCATION }} ==="
-          echo "=== Contents of ${{ env.APP_LOCATION }}/${{ env.OUTPUT_LOCATION }}: ==="
-          ls -la ${{ env.APP_LOCATION }}/${{ env.OUTPUT_LOCATION }}
-          echo "=== Total size of app_location: ==="
-          du -sh ${{ env.APP_LOCATION }}/${{ env.OUTPUT_LOCATION }}
-          echo "=== Total size of ${{ env.APP_LOCATION }} (parent): ==="
-          du -sh ${{ env.APP_LOCATION }}
-          echo "=== Largest dirs under ${{ env.APP_LOCATION }}: ==="
-          du -h --max-depth=1 ${{ env.APP_LOCATION }} | sort -rh | head -10
+        working-directory: ${{ env.WEB_DIR }}
 
       - name: Deploy to Azure Static Web Apps (Production)
         id: deploy
@@ -77,5 +65,5 @@ jobs:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: upload
-          app_location: "/${{ env.APP_LOCATION }}/${{ env.OUTPUT_LOCATION }}"
+          app_location: "/${{ env.WEB_DIR }}/${{ env.BUILD_OUTPUT }}"
           skip_app_build: true
