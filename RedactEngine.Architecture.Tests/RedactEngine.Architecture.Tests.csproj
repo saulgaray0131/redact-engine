@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="NetArchTest.eNhancedEdition" Version="1.4.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RedactEngine.Domain\RedactEngine.Domain.csproj" />
+    <ProjectReference Include="..\RedactEngine.Application\RedactEngine.Application.csproj" />
+    <ProjectReference Include="..\RedactEngine.Infrastructure\RedactEngine.Infrastructure.csproj" />
+    <ProjectReference Include="..\RedactEngine.ApiService\RedactEngine.ApiService.csproj" />
+    <ProjectReference Include="..\RedactEngine.Worker\RedactEngine.Worker.csproj" />
+    <ProjectReference Include="..\RedactEngine.Shared\RedactEngine.Shared.csproj" />
+    <ProjectReference Include="..\RedactEngine.ServiceDefaults\RedactEngine.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -46,6 +46,14 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: ${{ env.APP_LOCATION }}
 
+      - name: Generate API client
+        run: pnpm openapi-ts
+        working-directory: ${{ env.APP_LOCATION }}
+
+      - name: Lint
+        run: pnpm lint
+        working-directory: ${{ env.APP_LOCATION }}
+
       - name: Build
         run: pnpm build
         working-directory: ${{ env.APP_LOCATION }}
