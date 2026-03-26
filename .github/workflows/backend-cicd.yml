@@ -1,7 +1,7 @@
 ###############################################################################
 # RedactEngine Backend — CI/CD Pipeline
 #
-# Triggered on pushes to `main`.
+# Triggered on pushes to `main` when backend files change, or via manual dispatch.
 # Flow: Build & Test → Approval → Provision Prod (Infra) → Build & Push Prod Images → Deploy Prod
 #
 # Required GitHub Secrets:
@@ -19,6 +19,17 @@ name: Backend CI/CD
 on:
   push:
     branches: [main]
+    paths:
+      - "RedactEngine.ApiService/**"
+      - "RedactEngine.AppHost/**"
+      - "RedactEngine.Application/**"
+      - "RedactEngine.Domain/**"
+      - "RedactEngine.Infrastructure/**"
+      - "RedactEngine.ServiceDefaults/**"
+      - "RedactEngine.Shared/**"
+      - "RedactEngine.Worker/**"
+      - "RedactEngine.sln"
+      - ".github/workflows/backend-cicd.yml"
   workflow_dispatch:
 
 permissions:
@@ -66,6 +77,7 @@ jobs:
 ###############################################################################
   provision-prod-infra:
     name: Provision Prod Infra
+    needs: build-and-test
     runs-on: ubuntu-latest
     environment: production
     steps:
