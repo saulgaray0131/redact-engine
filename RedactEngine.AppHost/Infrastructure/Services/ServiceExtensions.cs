@@ -1,5 +1,6 @@
 using Aspire.Hosting.Azure;
 using Aspire.Hosting.JavaScript;
+using Aspire.Hosting.Python;
 using CommunityToolkit.Aspire.Hosting.Dapr;
 using RedactEngine.AppHost.Infrastructure.Configuration;
 
@@ -37,6 +38,7 @@ public static class ServiceExtensions
         string serviceName,
         IResourceBuilder<PostgresDatabaseResource> database,
         IResourceBuilder<AzureBlobStorageResource> blobs,
+        IResourceBuilder<UvicornAppResource> inferenceService,
         InfrastructureOptions options)
     {
         return builder.AddProject<Projects.RedactEngine_Worker>(serviceName, "http")
@@ -49,6 +51,9 @@ public static class ServiceExtensions
             .WaitFor(database)
             .WithReference(blobs)
             .WaitFor(blobs)
+            .WithReference(inferenceService)
+            .WaitFor(inferenceService)
+            .WithEnvironment("ConnectionStrings__InferenceService", inferenceService.GetEndpoint("http"))
             .WithEnvironment("DOTNET_ENVIRONMENT", options.Environment)
             .WithEnvironment("ASPNETCORE_ENVIRONMENT", options.Environment);
     }

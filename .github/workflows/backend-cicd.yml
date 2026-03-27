@@ -28,6 +28,7 @@ on:
       - "RedactEngine.ServiceDefaults/**"
       - "RedactEngine.Shared/**"
       - "RedactEngine.Worker/**"
+      - "RedactEngine.InferenceService/**"
       - "RedactEngine.sln"
       - ".github/workflows/backend-cicd.yml"
   workflow_dispatch:
@@ -152,6 +153,9 @@ jobs:
           - service: worker
             image: redactengine-worker
             dockerfile: RedactEngine.Worker/Dockerfile
+          - service: inference
+            image: redactengine-inference
+            dockerfile: RedactEngine.InferenceService/Dockerfile
 
     steps:
       - name: Checkout
@@ -295,6 +299,11 @@ jobs:
             --name redactengine-prod-worker \
             --resource-group "$RESOURCE_GROUP" \
             --image ${{ env.ACR_NAME_PROD }}.azurecr.io/redactengine-worker:${{ github.sha }}
+
+          az containerapp update \
+            --name redactengine-prod-inference \
+            --resource-group "$RESOURCE_GROUP" \
+            --image ${{ env.ACR_NAME_PROD }}.azurecr.io/redactengine-inference:${{ github.sha }}
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}

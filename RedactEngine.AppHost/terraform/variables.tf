@@ -63,6 +63,16 @@ variable "worker_config" {
   description = "Scaling and sizing config for Worker Service"
 }
 
+variable "inference_config" {
+  type = object({
+    min_replicas = number
+    max_replicas = number
+    cpu          = number
+    memory       = string
+  })
+  description = "Scaling and sizing config for Inference Service"
+}
+
 # --- Security Variables ---
 variable "admin_object_id" {
   type        = string

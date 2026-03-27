@@ -12,6 +12,7 @@ on:
       - "RedactEngine.ServiceDefaults/**"
       - "RedactEngine.Shared/**"
       - "RedactEngine.Worker/**"
+      - "RedactEngine.InferenceService/**"
       - "RedactEngine.Architecture.Tests/**"
       - "RedactEngine.sln"
       - ".github/workflows/backend-pr.yml"
@@ -44,3 +45,22 @@ jobs:
 
       - name: Run tests
         run: dotnet test --no-build --configuration Release --verbosity normal
+
+  check-inference:
+    name: Lint & Build Inference Service
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: RedactEngine.InferenceService
+        run: pip install -r requirements.txt
+
+      - name: Build Docker image
+        run: docker build -t redactengine-inference:test RedactEngine.InferenceService/

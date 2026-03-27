@@ -216,7 +216,12 @@ resource "azurerm_container_app" "worker" {
         value = "http://+:8080"
       }
 
-      # --- Health Probes (30s interval to reduce App Insights telemetry volume) ---
+      env {
+        name  = "ConnectionStrings__InferenceService"
+        value = "http://${azurerm_container_app.inference.name}:8000"
+      }
+
+      # --- Health Probes ---
       liveness_probe {
         transport = "HTTP"
         path      = "/alive"
@@ -259,7 +264,86 @@ resource "azurerm_container_app" "worker" {
   tags = local.common_tags
 }
 
-# --- 4. One-off Database Migration Job ---
+# --- 4. Inference Service ---
+resource "azurerm_container_app" "inference" {
+  name                         = "${local.resource_prefix}-inference"
+  container_app_environment_id = azurerm_container_app_environment.aca_env.id
+  resource_group_name          = azurerm_resource_group.rg.name
+  revision_mode                = "Single"
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.app_identity.id]
+  }
+
+  registry {
+    server   = azurerm_container_registry.acr.login_server
+    identity = azurerm_user_assigned_identity.app_identity.id
+  }
+
+  template {
+    min_replicas = var.inference_config.min_replicas
+    max_replicas = var.inference_config.max_replicas
+
+    container {
+      name   = "inference-service"
+      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+      cpu    = var.inference_config.cpu
+      memory = var.inference_config.memory
+
+      env {
+        name  = "INFERENCE_MODE"
+        value = "mock"
+      }
+
+      env {
+        name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+        value = azurerm_application_insights.appinsights.connection_string
+      }
+
+      liveness_probe {
+        transport = "HTTP"
+        path      = "/alive"
+        port      = 8000
+
+        initial_delay    = 10
+        interval_seconds = 200
+        timeout          = 5
+        failure_count_threshold = 3
+      }
+
+      readiness_probe {
+        transport = "HTTP"
+        path      = "/health"
+        port      = 8000
+
+        interval_seconds = 30
+        timeout          = 5
+        failure_count_threshold = 3
+      }
+
+      startup_probe {
+        transport = "HTTP"
+        path      = "/health"
+        port      = 8000
+
+        interval_seconds = 10
+        timeout          = 5
+        failure_count_threshold = 10
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].container[0].image,
+    ]
+  }
+
+  tags = local.common_tags
+}
+
+# --- 5. One-off Database Migration Job ---
 resource "azurerm_container_app_job" "db_migrator" {
   name                         = "${local.resource_prefix}-migrator"
   location                     = azurerm_resource_group.rg.location
