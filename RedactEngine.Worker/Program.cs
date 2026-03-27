@@ -15,6 +15,14 @@ builder.Services.AddControllers().AddDapr();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHealthChecks();
 
+builder.Services.AddHttpClient("InferenceService", client =>
+{
+    var inferenceUrl = builder.Configuration.GetConnectionString("InferenceService")
+                      ?? "http://localhost:8000";
+    client.BaseAddress = new Uri(inferenceUrl);
+    client.Timeout = TimeSpan.FromMinutes(10); // video processing can be slow
+});
+
 var app = builder.Build();
 
 app.UseCloudEvents();

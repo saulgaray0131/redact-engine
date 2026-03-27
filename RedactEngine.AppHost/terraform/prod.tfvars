@@ -26,4 +26,11 @@ worker_config = {
   memory       = "1.0Gi"
 }
 
+inference_config = {
+  min_replicas = 0
+  max_replicas = 1
+  cpu          = 0.5
+  memory       = "1.0Gi"
+}
+
 # admin_object_id: injected via TF_VAR_admin_object_id in CI

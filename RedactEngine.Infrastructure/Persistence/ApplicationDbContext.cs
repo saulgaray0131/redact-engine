@@ -22,6 +22,7 @@ public class ApplicationDbContext : DbContext, IUnitOfWork, IApplicationDbContex
     }
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<RedactionJob> RedactionJobs => Set<RedactionJob>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -29,6 +30,7 @@ public class ApplicationDbContext : DbContext, IUnitOfWork, IApplicationDbContex
         base.OnModelCreating(modelBuilder);
 
         modelBuilder.ApplyConfiguration(new UserConfiguration());
+        modelBuilder.ApplyConfiguration(new RedactionJobConfiguration());
         modelBuilder.ApplyConfiguration(new OutboxConfiguration());
     }
 

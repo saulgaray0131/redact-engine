@@ -17,6 +17,7 @@ graph TD
         Web[Web App<br/>React + Vite :5173]
         API[API Service<br/>ASP.NET Core]
         Worker[Worker Service<br/>Background Processing]
+        Inference[Inference Service<br/>Python + FastAPI :8000]
         DB[(PostgreSQL<br/>Database: Core)]
         Blob[(Azurite<br/>Blob Storage)]
         DaprAPI[Dapr Sidecar]
@@ -27,6 +28,7 @@ graph TD
     API --- DaprAPI
     Worker --- DaprWorker
     DaprAPI <-- Pub/Sub --> DaprWorker
+    Worker -- HTTP --> Inference
     API --> DB
     API --> Blob
     Worker --> DB
@@ -41,6 +43,7 @@ graph TD
 | Backend | .NET 10, ASP.NET Core, EF Core |
 | Database | PostgreSQL |
 | Blob Storage | Azure Blob Storage (Azurite locally) |
+| Inference | Python 3.12, FastAPI, OpenCV, Grounding DINO + SAM 2 (mock mode) |
 | Messaging | Dapr Pub/Sub (Azure Service Bus Queues) |
 | Frontend | React 19, Vite, TypeScript, TanStack Query |
 | Styling | Tailwind CSS, shadcn/ui |
@@ -56,11 +59,11 @@ graph TD
 | `RedactEngine.Application` | Application services, validation, service contracts |
 | `RedactEngine.Domain` | Domain entities, events, and invariants |
 | `RedactEngine.Infrastructure` | EF Core persistence, migrations, external integrations |
+| `RedactEngine.InferenceService` | Python inference service — object detection, tracking, and video redaction |
 | `RedactEngine.Web` | React + Vite frontend ([details](RedactEngine.Web/README.md)) |
 | `RedactEngine.Shared` | Cross-service contracts (e.g. pub/sub messages) |
 | `RedactEngine.ServiceDefaults` | Shared hosting config — telemetry, health checks, resilience |
 | `RedactEngine.Architecture.Tests` | Architecture convention tests (layering, DDD rules) |
-| `reports/` | LaTeX reports — each subfolder is a self-contained document ([details](#latex-reports)) |
 
 ## Prerequisites
 
@@ -69,12 +72,12 @@ Install these before you begin. Docker Desktop must be **running** whenever you 
 | Tool | Version | Install |
 |------|---------|---------|
 | .NET SDK | 10.0 | [Download](https://dotnet.microsoft.com/download/dotnet/10.0) |
+| Python | 3.12+ | [Download](https://www.python.org/downloads/) |
 | Docker Desktop | Latest | [Download](https://www.docker.com/products/docker-desktop/) |
 | Dapr CLI | Latest | [Install guide](https://docs.dapr.io/getting-started/install-dapr-cli/) |
 | Node.js | 20+ | [Download](https://nodejs.org/) |
 | pnpm | 10+ | `npm install -g pnpm` or [pnpm.io](https://pnpm.io/installation) |
 | Visual Studio Community *(optional)* | 2022+ | [Download](https://visualstudio.microsoft.com/vs/community/) |
-| TeX Live *(optional — for reports)* | Latest | [Download](https://www.tug.org/texlive/) |
 
 After installing the Dapr CLI, initialize Dapr (pulls required containers — only needed once):
 
@@ -132,37 +135,7 @@ cd RedactEngine.Web && pnpm openapi-ts
 
 # Run architecture tests
 dotnet test RedactEngine.Architecture.Tests
-
-# Build a LaTeX report (requires TeX Live)
-cd reports/<report-name> && latexmk
-
-# Clean LaTeX build artifacts
-cd reports/<report-name> && latexmk -C
 ```
-
-## LaTeX Reports
-
-The `reports/` directory contains LaTeX documents. Each subfolder is a self-contained report.
-
-```
-reports/
-  _template/          # Copy this to start a new report
-  some-report/
-    main.tex
-    references.bib
-    figures/
-```
-
-To create a new report:
-
-```bash
-cp -r reports/_template reports/my-new-report
-cd reports/my-new-report
-# Edit main.tex, then build:
-latexmk
-```
-
-The shared `.latexmkrc` at `reports/.latexmkrc` configures `pdflatex` and outputs build artifacts to a `build/` subdirectory so they stay out of the source tree. PDFs and build artifacts are git-ignored.
 
 ## Creating a Database Migration
 
@@ -194,6 +167,4 @@ Deployment is **fully automatic**. When you merge a pull request into `main`, th
 
 - **Database migrations run automatically** on startup — no manual `dotnet ef` commands needed.
 - **`src/client/` is auto-generated** — do not edit files in `RedactEngine.Web/src/client/` manually. If the OpenAPI spec changes, regenerate with `pnpm openapi-ts`.
-- **PostgreSQL and Azurite containers persist data** between restarts thanks to Aspire persistent volumes.
-- **Dapr sidecars are configured automatically** by Aspire — you don't need to manage them manually.
 - **Frontend details** — see [RedactEngine.Web/README.md](RedactEngine.Web/README.md) for the frontend architecture and conventions.
