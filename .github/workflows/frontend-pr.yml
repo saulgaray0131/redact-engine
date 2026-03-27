@@ -1,0 +1,47 @@
+name: Frontend PR Check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "RedactEngine.Web/**"
+      - ".github/workflows/frontend-pr.yml"
+
+concurrency:
+  group: frontend-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  WEB_DIR: "RedactEngine.Web"
+
+jobs:
+  check:
+    name: Lint & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: RedactEngine.Web/package.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: RedactEngine.Web/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: ${{ env.WEB_DIR }}
+
+      - name: Lint
+        run: pnpm lint
+        working-directory: ${{ env.WEB_DIR }}
+
+      - name: Build
+        run: pnpm build
+        working-directory: ${{ env.WEB_DIR }}
