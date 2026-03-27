@@ -13,6 +13,8 @@ public sealed class SamplePubSubController(DaprClient daprClient) : ControllerBa
         [FromBody] PublishSamplePubSubRequest? request,
         CancellationToken cancellationToken)
     {
+        // Sample message content with basic validation and defaults. In real scenarios, the message structure would be more complex and validated according to business rules.
+
         var message = string.IsNullOrWhiteSpace(request?.Message)
             ? "Hello from RedactEngine.ApiService"
             : request.Message.Trim();
