@@ -41,7 +41,7 @@ graph TD
 | Backend | .NET 10, ASP.NET Core, EF Core |
 | Database | PostgreSQL |
 | Blob Storage | Azure Blob Storage (Azurite locally) |
-| Messaging | Dapr Pub/Sub |
+| Messaging | Dapr Pub/Sub (Azure Service Bus Queues) |
 | Frontend | React 19, Vite, TypeScript, TanStack Query |
 | Styling | Tailwind CSS, shadcn/ui |
 | API Docs | Scalar (OpenAPI) |
@@ -139,6 +139,24 @@ cd RedactEngine.Web && pnpm openapi-ts
 # Run architecture tests
 dotnet test RedactEngine.Architecture.Tests
 ```
+
+## Creating a Database Migration
+
+When you change an entity, add a new entity, or update an entity configuration, you need to create an EF Core migration so the database schema stays in sync.
+
+```bash
+# From the repo root
+dotnet ef migrations add <MigrationName> --project RedactEngine.Infrastructure --startup-project RedactEngine.ApiService
+```
+
+Replace `<MigrationName>` with a short description of the change (e.g. `AddDocumentTable`, `AddStatusToUser`).
+
+This generates a migration file in `RedactEngine.Infrastructure/Migrations/`. **Commit the generated migration file** with your PR — migrations are applied automatically on startup, so no one needs to run them manually.
+
+> **Tip:** If you need to undo a migration you haven't pushed yet, run:
+> ```bash
+> dotnet ef migrations remove --project RedactEngine.Infrastructure --startup-project RedactEngine.ApiService
+> ```
 
 ## CI/CD & Deployment
 

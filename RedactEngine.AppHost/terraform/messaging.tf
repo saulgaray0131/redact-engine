@@ -9,7 +9,7 @@ resource "azurerm_servicebus_namespace" "sb" {
   tags = local.common_tags
 }
 
-# Grant the app identity access to manage Service Bus queues and topics.
+# Grant the app identity access to manage Service Bus queues.
 resource "azurerm_role_assignment" "sb_data_owner" {
   scope                = azurerm_servicebus_namespace.sb.id
   role_definition_name = "Azure Service Bus Data Owner"
@@ -28,7 +28,7 @@ resource "azurerm_servicebus_namespace_authorization_rule" "dapr_pubsub" {
 resource "azurerm_container_app_environment_dapr_component" "pubsub" {
   name                         = "pubsub"
   container_app_environment_id = azurerm_container_app_environment.aca_env.id
-  component_type               = "pubsub.azure.servicebus"
+  component_type               = "pubsub.azure.servicebus.queues"
   version                      = "v1"
   ignore_errors                = false
   scopes = [
