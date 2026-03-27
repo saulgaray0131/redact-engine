@@ -60,6 +60,7 @@ graph TD
 | `RedactEngine.Shared` | Cross-service contracts (e.g. pub/sub messages) |
 | `RedactEngine.ServiceDefaults` | Shared hosting config — telemetry, health checks, resilience |
 | `RedactEngine.Architecture.Tests` | Architecture convention tests (layering, DDD rules) |
+| `reports/` | LaTeX reports — each subfolder is a self-contained document ([details](#latex-reports)) |
 
 ## Prerequisites
 
@@ -73,6 +74,7 @@ Install these before you begin. Docker Desktop must be **running** whenever you 
 | Node.js | 20+ | [Download](https://nodejs.org/) |
 | pnpm | 10+ | `npm install -g pnpm` or [pnpm.io](https://pnpm.io/installation) |
 | Visual Studio Community *(optional)* | 2022+ | [Download](https://visualstudio.microsoft.com/vs/community/) |
+| TeX Live *(optional — for reports)* | Latest | [Download](https://www.tug.org/texlive/) |
 
 After installing the Dapr CLI, initialize Dapr (pulls required containers — only needed once):
 
@@ -89,17 +91,9 @@ git clone <repo-url>
 cd RedactEngine
 ```
 
-### 2. Install frontend dependencies
+### 2. Run the project
 
-```bash
-cd RedactEngine.Web
-pnpm install
-cd ..
-```
-
-### 3. Run the project
-
-Make sure Docker Desktop is running, then pick one of these options:
+Make sure Docker Desktop is running, then pick one of these options. Aspire automatically installs frontend dependencies (`pnpm install`) on startup.
 
 #### Option A — Visual Studio Community
 
@@ -113,7 +107,7 @@ Make sure Docker Desktop is running, then pick one of these options:
 dotnet run --project RedactEngine.AppHost
 ```
 
-### 4. Open the app
+### 3. Open the app
 
 Once running, the **Aspire dashboard** opens automatically in your browser. From there you can see all services, logs, and traces.
 
@@ -138,7 +132,37 @@ cd RedactEngine.Web && pnpm openapi-ts
 
 # Run architecture tests
 dotnet test RedactEngine.Architecture.Tests
+
+# Build a LaTeX report (requires TeX Live)
+cd reports/<report-name> && latexmk
+
+# Clean LaTeX build artifacts
+cd reports/<report-name> && latexmk -C
 ```
+
+## LaTeX Reports
+
+The `reports/` directory contains LaTeX documents. Each subfolder is a self-contained report.
+
+```
+reports/
+  _template/          # Copy this to start a new report
+  some-report/
+    main.tex
+    references.bib
+    figures/
+```
+
+To create a new report:
+
+```bash
+cp -r reports/_template reports/my-new-report
+cd reports/my-new-report
+# Edit main.tex, then build:
+latexmk
+```
+
+The shared `.latexmkrc` at `reports/.latexmkrc` configures `pdflatex` and outputs build artifacts to a `build/` subdirectory so they stay out of the source tree. PDFs and build artifacts are git-ignored.
 
 ## Creating a Database Migration
 
