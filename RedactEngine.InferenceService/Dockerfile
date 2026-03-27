@@ -7,10 +7,10 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends libgl1 libglib2.0-0 ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY RedactEngine.InferenceService/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app/ ./app/
+COPY RedactEngine.InferenceService/app/ ./app/
 
 ENV INFERENCE_MODE=mock
 
