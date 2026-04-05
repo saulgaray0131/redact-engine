@@ -59,6 +59,17 @@ class ApiClient {
     }
     return response.json()
   }
+
+  async delete(path: string): Promise<void> {
+    const headers = await this.getHeaders()
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      method: 'DELETE',
+      headers,
+    })
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status} ${response.statusText}`)
+    }
+  }
 }
 
 export const apiClient = new ApiClient(appConfig.apiBaseUrl)
