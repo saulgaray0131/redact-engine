@@ -2,7 +2,7 @@
 RedactEngine Inference Service
 
 FastAPI service that wraps Grounding DINO + SAM 2 for prompt-driven video redaction.
-Currently runs in mock mode — returns synthetic bounding boxes and masks for development.
+Currently runs in mock mode - returns synthetic bounding boxes and masks for development.
 When ready, real model inference can be enabled by setting INFERENCE_MODE=real.
 """
 
