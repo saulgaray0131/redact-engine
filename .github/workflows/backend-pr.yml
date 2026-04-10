@@ -63,4 +63,4 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Build Docker image
-        run: docker build -t redactengine-inference:test RedactEngine.InferenceService/
+        run: docker build -t redactengine-inference:test -f RedactEngine.InferenceService/Dockerfile .
