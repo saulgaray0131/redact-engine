@@ -60,4 +60,23 @@ public class AzureBlobService : IBlobService
             throw;
         }
     }
+
+    public async Task DeleteAsync(string url, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var uri = new Uri(url);
+            var blobName = uri.AbsolutePath.TrimStart('/').Substring(DefaultContainerName.Length + 1); // Remove container name and leading slash
+            var containerClient = _blobServiceClient.GetBlobContainerClient(DefaultContainerName);
+            var blobClient = containerClient.GetBlobClient(blobName);
+
+            await blobClient.DeleteIfExistsAsync(cancellationToken: cancellationToken);
+            _logger.LogInformation("Deleted blob {BlobName} from container {ContainerName}", blobName, DefaultContainerName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete blob from URL {Url}", url);
+            throw;
+        }
+    }
 }

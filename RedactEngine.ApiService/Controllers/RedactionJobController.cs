@@ -117,6 +117,35 @@ public sealed class RedactionJobController(
 
         return Ok(jobs);
     }
+
+    /// <summary>
+    /// Delete a redaction job and its associated blobs.
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> DeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var job = await db.RedactionJobs
+            .FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
+
+        if (job is null)
+            return NotFound();
+
+        // Delete associated blobs
+        if (!string.IsNullOrEmpty(job.OriginalVideoUrl))
+        {
+            await blobService.DeleteAsync(job.OriginalVideoUrl, cancellationToken);
+        }
+        if (!string.IsNullOrEmpty(job.RedactedVideoUrl))
+        {
+            await blobService.DeleteAsync(job.RedactedVideoUrl, cancellationToken);
+        }
+
+        // Remove job from database
+        db.RedactionJobs.Remove(job);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return NoContent();
+    }
 }
 
 public sealed record SubmitRedactionJobResponse(Guid JobId, string Status);
