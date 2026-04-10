@@ -15,4 +15,12 @@ public interface IBlobService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The public/accessible URL of the uploaded blob.</returns>
     Task<string> UploadAsync(Stream stream, string fileName, string contentType, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a blob from storage by its URL.
+    /// </summary>
+    /// <param name="url">The URL of the blob to delete.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    Task DeleteAsync(string url, CancellationToken cancellationToken = default);
 }
