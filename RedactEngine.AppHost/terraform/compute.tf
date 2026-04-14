@@ -61,6 +61,11 @@ resource "azurerm_container_app" "api" {
       }
 
       env {
+        name  = "ConnectionStrings__BlobStorage"
+        value = azurerm_storage_account.storage.primary_blob_connection_string
+      }
+
+      env {
         name  = "ConnectionStrings__keyvault"
         value = azurerm_key_vault.kv.vault_uri
       }
