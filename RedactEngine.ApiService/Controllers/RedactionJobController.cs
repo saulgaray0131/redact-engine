@@ -16,7 +16,7 @@ public sealed class RedactionJobController(
     DaprClient daprClient) : ControllerBase
 {
     /// <summary>
-    /// Submit a new redaction job. Uploads the video to blob storage and queues it for processing.
+    /// Submit a new redaction job. Uploads the video to blob storage and queues detection.
     /// </summary>
     [HttpPost]
     [RequestSizeLimit(500 * 1024 * 1024)] // 500 MB
@@ -47,14 +47,13 @@ public sealed class RedactionJobController(
         db.RedactionJobs.Add(job);
         await db.SaveChangesAsync(cancellationToken);
 
-        // Publish message for worker to pick up
+        // Publish detection request for worker to pick up
         await daprClient.PublishEventAsync(
-            RedactionJobPubSub.ComponentName,
-            RedactionJobPubSub.TopicName,
-            new RedactionJobSubmittedMessage(
+            DetectionPubSub.ComponentName,
+            DetectionPubSub.TopicName,
+            new DetectionRequestedMessage(
                 job.Id,
                 job.Prompt,
-                job.RedactionStyle.ToString().ToLowerInvariant(),
                 job.ConfidenceThreshold,
                 job.OriginalVideoUrl,
                 job.OriginalFileName,
@@ -77,18 +76,7 @@ public sealed class RedactionJobController(
         if (job is null)
             return NotFound();
 
-        return Ok(new RedactionJobResponse(
-            job.Id,
-            job.Prompt,
-            job.RedactionStyle.ToString(),
-            job.ConfidenceThreshold,
-            job.OriginalVideoUrl,
-            job.OriginalFileName,
-            job.RedactedVideoUrl,
-            job.Status.ToString(),
-            job.ErrorMessage,
-            job.CreatedAt,
-            job.UpdatedAt));
+        return Ok(MapToResponse(job));
     }
 
     /// <summary>
@@ -101,21 +89,9 @@ public sealed class RedactionJobController(
             .AsNoTracking()
             .OrderByDescending(j => j.CreatedAt)
             .Take(50)
-            .Select(j => new RedactionJobResponse(
-                j.Id,
-                j.Prompt,
-                j.RedactionStyle.ToString(),
-                j.ConfidenceThreshold,
-                j.OriginalVideoUrl,
-                j.OriginalFileName,
-                j.RedactedVideoUrl,
-                j.Status.ToString(),
-                j.ErrorMessage,
-                j.CreatedAt,
-                j.UpdatedAt))
             .ToListAsync(cancellationToken);
 
-        return Ok(jobs);
+        return Ok(jobs.Select(MapToResponse).ToList());
     }
 
     /// <summary>
@@ -146,6 +122,23 @@ public sealed class RedactionJobController(
 
         return NoContent();
     }
+
+    private static RedactionJobResponse MapToResponse(RedactionJob job) => new(
+        job.Id,
+        job.Prompt,
+        job.RedactionStyle.ToString(),
+        job.ConfidenceThreshold,
+        job.OriginalVideoUrl,
+        job.OriginalFileName,
+        job.RedactedVideoUrl,
+        job.Status.ToString(),
+        job.ErrorMessage,
+        job.DetectionPreviewUrl,
+        job.ProcessingMetrics?.TotalProcessingTimeMs,
+        job.ProcessingMetrics?.ObjectsDetected,
+        job.ProcessingMetrics?.FramesProcessed,
+        job.CreatedAt,
+        job.UpdatedAt);
 }
 
 public sealed record SubmitRedactionJobResponse(Guid JobId, string Status);
@@ -160,5 +153,9 @@ public sealed record RedactionJobResponse(
     string? RedactedVideoUrl,
     string Status,
     string? ErrorMessage,
+    string? DetectionPreviewUrl,
+    long? TotalProcessingTimeMs,
+    int? ObjectsDetected,
+    int? FramesProcessed,
     DateTime CreatedAt,
     DateTime UpdatedAt);
