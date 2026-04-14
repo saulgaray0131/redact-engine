@@ -1,51 +1,44 @@
 import { createBrowserRouter } from 'react-router-dom'
-import { lazy, Suspense } from 'react'
+import { Suspense } from 'react'
+import { AppLayout, HomePage, NewJobPage, JobsPage, JobDetailPage, SettingsPage } from './lazy-pages'
 
-const AppLayout = lazy(() => import('@/components/layout/app-layout'))
-const HomePage = lazy(() => import('@/pages/home'))
-const NewJobPage = lazy(() => import('@/pages/new-job'))
-const JobsPage = lazy(() => import('@/pages/jobs'))
-const JobDetailPage = lazy(() => import('@/pages/job-detail'))
-const SettingsPage = lazy(() => import('@/pages/settings'))
-
-function SuspenseWrapper({ children }: { children: React.ReactNode }) {
-  return (
-    <Suspense fallback={<div className="flex h-screen items-center justify-center">Loading...</div>}>
-      {children}
-    </Suspense>
-  )
-}
+// Inline wrapper to avoid exporting a component alongside the router constant
+const wrap = (Component: React.ComponentType) => (
+  <Suspense fallback={<div className="flex h-screen items-center justify-center">Loading...</div>}>
+    <Component />
+  </Suspense>
+)
 
 export const router = createBrowserRouter([
   {
     path: '/',
-    element: <SuspenseWrapper><HomePage /></SuspenseWrapper>,
+    element: wrap(HomePage),
   },
   {
     path: '/app',
-    element: <SuspenseWrapper><AppLayout /></SuspenseWrapper>,
+    element: wrap(AppLayout),
     children: [
       {
         path: 'jobs',
-        element: <SuspenseWrapper><JobsPage /></SuspenseWrapper>,
+        element: wrap(JobsPage),
       },
       {
         path: 'jobs/:id',
-        element: <SuspenseWrapper><JobDetailPage /></SuspenseWrapper>,
+        element: wrap(JobDetailPage),
       },
       {
         path: 'new',
-        element: <SuspenseWrapper><NewJobPage /></SuspenseWrapper>,
+        element: wrap(NewJobPage),
       },
     ],
   },
   {
     path: '/settings',
-    element: <SuspenseWrapper><AppLayout /></SuspenseWrapper>,
+    element: wrap(AppLayout),
     children: [
       {
         index: true,
-        element: <SuspenseWrapper><SettingsPage /></SuspenseWrapper>,
+        element: wrap(SettingsPage),
       },
     ],
   },

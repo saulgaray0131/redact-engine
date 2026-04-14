@@ -95,6 +95,65 @@ public sealed class RedactionJobController(
     }
 
     /// <summary>
+    /// Confirm a job in AwaitingReview status and trigger redaction.
+    /// </summary>
+    [HttpPost("{id:guid}/confirm")]
+    public async Task<ActionResult<RedactionJobResponse>> ConfirmAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var job = await db.RedactionJobs
+            .FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
+
+        if (job is null)
+            return NotFound();
+
+        if (job.Status != RedactionJobStatus.AwaitingReview)
+            return BadRequest($"Job must be in AwaitingReview status to confirm. Current status: {job.Status}");
+
+        job.MarkRedacting();
+        await db.SaveChangesAsync(cancellationToken);
+
+        await daprClient.PublishEventAsync(
+            RedactionExportPubSub.ComponentName,
+            RedactionExportPubSub.TopicName,
+            new RedactionExportRequestedMessage(
+                job.Id,
+                job.Prompt,
+                job.RedactionStyle.ToString().ToLowerInvariant(),
+                job.ConfidenceThreshold,
+                job.OriginalVideoUrl,
+                job.OriginalFileName,
+                DateTimeOffset.UtcNow),
+            cancellationToken);
+
+        return Ok(MapToResponse(job));
+    }
+
+    /// <summary>
+    /// Cancel a job that hasn't started redacting yet.
+    /// </summary>
+    [HttpPost("{id:guid}/cancel")]
+    public async Task<ActionResult<RedactionJobResponse>> CancelAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var job = await db.RedactionJobs
+            .FirstOrDefaultAsync(j => j.Id == id, cancellationToken);
+
+        if (job is null)
+            return NotFound();
+
+        try
+        {
+            job.MarkCancelled();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(MapToResponse(job));
+    }
+
+    /// <summary>
     /// Delete a redaction job and its associated blobs.
     /// </summary>
     [HttpDelete("{id:guid}")]
