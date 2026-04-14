@@ -223,7 +223,7 @@ resource "azurerm_container_app" "worker" {
 
       env {
         name  = "ConnectionStrings__InferenceService"
-        value = "http://${azurerm_container_app.inference.name}:8000"
+        value = "http://${azurerm_container_app.inference.name}"
       }
 
       # --- Health Probes ---
@@ -336,6 +336,15 @@ resource "azurerm_container_app" "inference" {
         timeout          = 5
         failure_count_threshold = 10
       }
+    }
+  }
+
+  ingress {
+    external_enabled = false
+    target_port      = 8000
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
     }
   }
 
