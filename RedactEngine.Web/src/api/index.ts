@@ -1,1 +1,1 @@
-export { uploadAsset, createRedactJob, listRedactJobs, getRedactJob } from './redact-jobs'
+export { createRedactJob, listRedactJobs, getRedactJob, confirmRedactJob, cancelRedactJob, deleteRedactJob } from './redact-jobs'

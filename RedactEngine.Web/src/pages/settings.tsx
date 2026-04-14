@@ -1,7 +1,7 @@
 import { Settings } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { useTheme } from '@/providers/theme-provider'
+import { useTheme } from '@/hooks/use-theme'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { getHealthDetailedOptions, postSamplesPubsubMutation } from '@/client/@tanstack/react-query.gen'
 import { appConfig } from '@/config/app-config'

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Upload, FileImage, FileVideo } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Upload, FileVideo } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
@@ -8,19 +9,23 @@ import { useCreateRedactJob } from '@/hooks/use-redact-jobs'
 export default function NewJobPage() {
   const [file, setFile] = useState<File | null>(null)
   const [prompt, setPrompt] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const navigate = useNavigate()
   const mutation = useCreateRedactJob()
-
-  const fileType = file?.type.startsWith('video/') ? 'video' : 'image'
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!file || !prompt.trim()) return
 
+    setError(null)
     mutation.mutate(
       { file, prompt: prompt.trim() },
       {
-        onError: () => {
-          console.log('Submit attempted — backend not available yet')
+        onSuccess: (data) => {
+          navigate(`/app/jobs/${data.jobId}`)
+        },
+        onError: (err) => {
+          setError(err instanceof Error ? err.message : 'Failed to submit job. Please try again.')
         },
       }
     )
@@ -32,26 +37,22 @@ export default function NewJobPage() {
         <CardHeader>
           <CardTitle>New Redact Job</CardTitle>
           <CardDescription>
-            Upload a file and describe what should be redacted.
+            Upload a video and describe what should be redacted.
           </CardDescription>
         </CardHeader>
 
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <label className="text-sm font-medium">File</label>
+            <label className="text-sm font-medium">Video</label>
             <input
               type="file"
-              accept="image/*,video/*"
+              accept="video/*"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               className="file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/80 text-sm text-muted-foreground"
             />
             {file && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                {fileType === 'video' ? (
-                  <FileVideo className="size-4" />
-                ) : (
-                  <FileImage className="size-4" />
-                )}
+                <FileVideo className="size-4" />
                 <span>{file.name}</span>
               </div>
             )}
@@ -64,10 +65,14 @@ export default function NewJobPage() {
             <Textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Describe what should be redacted, e.g., 'blur all faces' or 'redact license plates'"
+              placeholder='Describe what should be redacted, e.g., "blur all faces" or "redact license plates"'
               rows={4}
             />
           </div>
+
+          {error && (
+            <p className="text-sm text-destructive">{error}</p>
+          )}
         </CardContent>
 
         <CardFooter>
@@ -76,7 +81,7 @@ export default function NewJobPage() {
             disabled={!file || !prompt.trim() || mutation.isPending}
           >
             {mutation.isPending ? (
-              <>Submitting…</>
+              <>Submitting...</>
             ) : (
               <>
                 <Upload className="size-4" />

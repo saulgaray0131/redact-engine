@@ -113,9 +113,7 @@ public sealed class RedactionJobController(
             return Ok();
         }
 
-        job.MarkRedacting();
-        await db.SaveChangesAsync(cancellationToken);
-
+        // Job is already in Redacting status (set by the API confirm endpoint)
         var stopwatch = Stopwatch.StartNew();
 
         try
