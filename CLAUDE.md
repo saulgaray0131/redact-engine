@@ -35,10 +35,10 @@ dotnet ef migrations remove --project RedactEngine.Infrastructure --startup-proj
 
 ## Architecture
 
-**System flow:** Web (React+Vite) -> API Service (ASP.NET Core) -> PostgreSQL + Azure Blob Storage. API publishes events via Dapr pub/sub -> Worker Service processes jobs -> calls Inference Service (Python FastAPI) for video processing.
+**System flow:** Web (React+Vite) -> API Service (ASP.NET Core) -> PostgreSQL + Azure Blob Storage. API publishes events via Dapr pub/sub -> Worker Service processes jobs in a multi-stage pipeline (detect -> review -> redact) -> calls Inference Service (Python FastAPI) for video processing.
 
 **Layering (enforced by architecture tests):**
-- **Domain** - Entities, value objects, domain events. No EF Core or external package dependencies.
+- **Domain** - Entities (`Domain/Entities/`), value objects (`Domain/ValueObjects/`), domain events. No EF Core or external package dependencies.
 - **Application** - Services, validation (FluentValidation), service contracts/DTOs. Orchestrates domain + infrastructure.
 - **Infrastructure** - EF Core `ApplicationDbContext`, migrations, blob storage, outbox pattern. All persistence lives here.
 - **ApiService / Worker** - Thin entry points. Controllers and workers delegate to application/infrastructure services.

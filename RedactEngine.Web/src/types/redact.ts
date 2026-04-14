@@ -1,33 +1,36 @@
-export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed'
-
-export type RedactTargetType = 'face' | 'text' | 'object' | 'license-plate' | 'custom'
-
-export interface RedactResult {
-  outputUrl: string
-  redactedCount: number
-  processingTimeMs: number
-}
+export type JobStatus =
+  | 'Pending'
+  | 'Detecting'
+  | 'AwaitingReview'
+  | 'Redacting'
+  | 'Completed'
+  | 'Failed'
+  | 'Cancelled'
 
 export interface RedactJob {
   id: string
-  fileName: string
-  fileUrl: string
-  fileType: 'image' | 'video'
   prompt: string
-  targetTypes: RedactTargetType[]
+  redactionStyle: string
+  confidenceThreshold: number
+  originalVideoUrl: string
+  originalFileName: string
+  redactedVideoUrl: string | null
   status: JobStatus
-  result: RedactResult | null
+  errorMessage: string | null
+  detectionPreviewUrl: string | null
+  totalProcessingTimeMs: number | null
+  objectsDetected: number | null
+  framesProcessed: number | null
   createdAt: string
   updatedAt: string
+}
+
+export interface SubmitJobResponse {
+  jobId: string
+  status: string
 }
 
 export interface CreateRedactJobRequest {
   file: File
   prompt: string
-}
-
-export interface UploadAssetResponse {
-  fileUrl: string
-  fileName: string
-  fileType: 'image' | 'video'
 }
