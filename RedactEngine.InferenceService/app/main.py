@@ -229,6 +229,9 @@ def _redact_video(
     fd_out, tmp_out = tempfile.mkstemp(suffix=".mp4")
     os.close(fd_out)
 
+    cap = None
+    process = None
+
     try:
         with os.fdopen(fd_in, "wb") as f:
             f.write(video_bytes)
@@ -272,6 +275,7 @@ def _redact_video(
             process.stdin.write(frame.tobytes())
 
         cap.release()
+        cap = None
         _, stderr = process.communicate(timeout=300)
 
         if process.returncode != 0:
@@ -281,9 +285,15 @@ def _redact_video(
         with open(tmp_out, "rb") as f:
             return f.read()
     finally:
+        if cap is not None:
+            cap.release()
+        if process is not None and process.poll() is None:
+            process.kill()
         for p in (tmp_in, tmp_out):
-            if os.path.exists(p):
+            try:
                 os.remove(p)
+            except OSError:
+                pass
 
 
 def _apply_redaction(

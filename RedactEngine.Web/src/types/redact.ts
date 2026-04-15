@@ -7,10 +7,12 @@ export type JobStatus =
   | 'Failed'
   | 'Cancelled'
 
+export type RedactionStyle = 'Blur' | 'Pixelate' | 'Fill'
+
 export interface RedactJob {
   id: string
   prompt: string
-  redactionStyle: string
+  redactionStyle: RedactionStyle
   confidenceThreshold: number
   originalVideoUrl: string
   originalFileName: string
@@ -33,4 +35,6 @@ export interface SubmitJobResponse {
 export interface CreateRedactJobRequest {
   file: File
   prompt: string
+  redactionStyle: RedactionStyle
+  confidenceThreshold: number
 }
