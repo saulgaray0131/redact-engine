@@ -226,9 +226,7 @@ def _redact_video(
 ) -> bytes:
     """Process all frames: detect objects, apply redaction, re-encode."""
     fd_in, tmp_in = tempfile.mkstemp(suffix=".mp4")
-    fd_raw, tmp_raw = tempfile.mkstemp(suffix=".avi")
     fd_out, tmp_out = tempfile.mkstemp(suffix=".mp4")
-    os.close(fd_raw)
     os.close(fd_out)
 
     try:
@@ -240,12 +238,27 @@ def _redact_video(
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        # Write frames with MJPEG into AVI — reliable across all platforms
-        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
-        writer = cv2.VideoWriter(tmp_raw, fourcc, fps, (w, h))
-        if not writer.isOpened():
-            logger.error("Failed to open VideoWriter")
-            raise RuntimeError("Failed to initialise video writer")
+        # Pipe raw frames directly into ffmpeg — avoids large intermediate files
+        # that would OOM the container.
+        process = subprocess.Popen(
+            [
+                "ffmpeg", "-y",
+                "-f", "rawvideo",
+                "-pix_fmt", "bgr24",
+                "-s", f"{w}x{h}",
+                "-r", str(fps),
+                "-i", "pipe:0",
+                "-c:v", "libx264",
+                "-preset", "fast",
+                "-crf", "23",
+                "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart",
+                tmp_out,
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -256,34 +269,19 @@ def _redact_video(
             for det in detections:
                 frame = _apply_redaction(frame, det, style)
 
-            writer.write(frame)
+            process.stdin.write(frame.tobytes())
 
         cap.release()
-        writer.release()
+        _, stderr = process.communicate(timeout=300)
 
-        # Re-encode to H.264 MP4 so browsers can play the video
-        result = subprocess.run(
-            [
-                "ffmpeg", "-y",
-                "-i", tmp_raw,
-                "-c:v", "libx264",
-                "-preset", "fast",
-                "-crf", "23",
-                "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart",
-                tmp_out,
-            ],
-            capture_output=True,
-            timeout=300,
-        )
-        if result.returncode != 0:
-            logger.error("ffmpeg failed: %s", result.stderr.decode())
+        if process.returncode != 0:
+            logger.error("ffmpeg failed: %s", stderr.decode())
             raise RuntimeError("ffmpeg re-encode failed")
 
         with open(tmp_out, "rb") as f:
             return f.read()
     finally:
-        for p in (tmp_in, tmp_raw, tmp_out):
+        for p in (tmp_in, tmp_out):
             if os.path.exists(p):
                 os.remove(p)
 

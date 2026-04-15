@@ -77,6 +77,7 @@ Install these before you begin. Docker Desktop must be **running** whenever you 
 | Dapr CLI | Latest | [Install guide](https://docs.dapr.io/getting-started/install-dapr-cli/) |
 | Node.js | 20+ | [Download](https://nodejs.org/) |
 | pnpm | 10+ | `npm install -g pnpm` or [pnpm.io](https://pnpm.io/installation) |
+| FFmpeg | Latest | `winget install FFmpeg` (Win) / `brew install ffmpeg` (Mac) / `apt install ffmpeg` (Linux) |
 | Visual Studio Community *(optional)* | 2022+ | [Download](https://visualstudio.microsoft.com/vs/community/) |
 
 After installing the Dapr CLI, initialize Dapr (pulls required containers — only needed once):
