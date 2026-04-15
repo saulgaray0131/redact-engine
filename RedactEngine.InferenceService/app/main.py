@@ -9,6 +9,7 @@ When ready, real model inference can be enabled by setting INFERENCE_MODE=real.
 import io
 import logging
 import os
+import subprocess
 import tempfile
 import uuid
 from enum import Enum
@@ -225,7 +226,9 @@ def _redact_video(
 ) -> bytes:
     """Process all frames: detect objects, apply redaction, re-encode."""
     fd_in, tmp_in = tempfile.mkstemp(suffix=".mp4")
+    fd_raw, tmp_raw = tempfile.mkstemp(suffix=".avi")
     fd_out, tmp_out = tempfile.mkstemp(suffix=".mp4")
+    os.close(fd_raw)
     os.close(fd_out)
 
     try:
@@ -237,8 +240,12 @@ def _redact_video(
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        writer = cv2.VideoWriter(tmp_out, fourcc, fps, (w, h))
+        # Write frames with MJPEG into AVI — reliable across all platforms
+        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+        writer = cv2.VideoWriter(tmp_raw, fourcc, fps, (w, h))
+        if not writer.isOpened():
+            logger.error("Failed to open VideoWriter")
+            raise RuntimeError("Failed to initialise video writer")
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -254,10 +261,29 @@ def _redact_video(
         cap.release()
         writer.release()
 
+        # Re-encode to H.264 MP4 so browsers can play the video
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", tmp_raw,
+                "-c:v", "libx264",
+                "-preset", "fast",
+                "-crf", "23",
+                "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart",
+                tmp_out,
+            ],
+            capture_output=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            logger.error("ffmpeg failed: %s", result.stderr.decode())
+            raise RuntimeError("ffmpeg re-encode failed")
+
         with open(tmp_out, "rb") as f:
             return f.read()
     finally:
-        for p in (tmp_in, tmp_out):
+        for p in (tmp_in, tmp_raw, tmp_out):
             if os.path.exists(p):
                 os.remove(p)
 
