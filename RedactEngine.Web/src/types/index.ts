@@ -1,1 +1,1 @@
-export type { JobStatus, RedactJob, SubmitJobResponse, CreateRedactJobRequest } from './redact'
+export type { JobStatus, RedactJob, SubmitJobResponse, CreateRedactJobRequest, RedactionStyle } from './redact'
