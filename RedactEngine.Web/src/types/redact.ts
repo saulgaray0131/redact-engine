@@ -9,6 +9,12 @@ export type JobStatus =
 
 export type RedactionStyle = 'Blur' | 'Pixelate' | 'Fill'
 
+export interface DetectionPreview {
+  frameIndex: number
+  timestampMs: number
+  url: string
+}
+
 export interface RedactJob {
   id: string
   prompt: string
@@ -19,7 +25,7 @@ export interface RedactJob {
   redactedVideoUrl: string | null
   status: JobStatus
   errorMessage: string | null
-  detectionPreviewUrl: string | null
+  detectionPreviews: DetectionPreview[] | null
   totalProcessingTimeMs: number | null
   objectsDetected: number | null
   framesProcessed: number | null

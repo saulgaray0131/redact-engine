@@ -192,7 +192,9 @@ public sealed class RedactionJobController(
         job.RedactedVideoUrl,
         job.Status.ToString(),
         job.ErrorMessage,
-        job.DetectionPreviewUrl,
+        job.DetectionPreviews?
+            .Select(p => new DetectionPreviewResponse(p.FrameIndex, p.TimestampMs, p.Url))
+            .ToList(),
         job.ProcessingMetrics?.TotalProcessingTimeMs,
         job.ProcessingMetrics?.ObjectsDetected,
         job.ProcessingMetrics?.FramesProcessed,
@@ -201,6 +203,8 @@ public sealed class RedactionJobController(
 }
 
 public sealed record SubmitRedactionJobResponse(Guid JobId, string Status);
+
+public sealed record DetectionPreviewResponse(int FrameIndex, int TimestampMs, string Url);
 
 public sealed record RedactionJobResponse(
     Guid Id,
@@ -212,7 +216,7 @@ public sealed record RedactionJobResponse(
     string? RedactedVideoUrl,
     string Status,
     string? ErrorMessage,
-    string? DetectionPreviewUrl,
+    List<DetectionPreviewResponse>? DetectionPreviews,
     long? TotalProcessingTimeMs,
     int? ObjectsDetected,
     int? FramesProcessed,

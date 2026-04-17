@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { useRedactJob, useConfirmRedactJob, useCancelRedactJob } from '@/hooks/use-redact-jobs'
 import type { JobStatus } from '@/types'
@@ -58,6 +59,13 @@ function formatDate(iso: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function formatTimestamp(ms: number) {
+  const totalSeconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 
 export default function JobDetailPage() {
@@ -148,6 +156,33 @@ export default function JobDetailPage() {
 
             {job.status === 'AwaitingReview' && (
               <div className="flex flex-col gap-3">
+                {job.detectionPreviews && job.detectionPreviews.length > 0 && (
+                  <div className="flex gap-2 overflow-x-auto pb-2">
+                    {job.detectionPreviews.map((preview) => (
+                      <Dialog key={preview.frameIndex}>
+                        <DialogTrigger
+                          className="shrink-0 cursor-zoom-in overflow-hidden rounded-md border transition-colors hover:border-foreground/40"
+                        >
+                          <img
+                            src={preview.url}
+                            alt={`Preview at ${formatTimestamp(preview.timestampMs)}`}
+                            className="h-20 w-36 bg-muted object-cover"
+                          />
+                          <div className="px-2 py-1 text-center text-xs text-muted-foreground">
+                            {formatTimestamp(preview.timestampMs)}
+                          </div>
+                        </DialogTrigger>
+                        <DialogContent className="max-h-[95vh] !max-w-[95vw] p-2 sm:!max-w-[95vw]">
+                          <img
+                            src={preview.url}
+                            alt={`Preview at ${formatTimestamp(preview.timestampMs)} (enlarged)`}
+                            className="max-h-[90vh] w-auto object-contain mx-auto"
+                          />
+                        </DialogContent>
+                      </Dialog>
+                    ))}
+                  </div>
+                )}
                 <div className="rounded-lg border bg-muted/50 p-3">
                   <p className="text-sm font-medium">Detection Complete</p>
                   {job.objectsDetected != null && (

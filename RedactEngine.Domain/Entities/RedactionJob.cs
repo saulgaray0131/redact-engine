@@ -19,7 +19,7 @@ public class RedactionJob : Entity
     public VideoMetadata? VideoMetadata { get; private set; }
     public DetectionSummary? DetectionSummary { get; private set; }
     public ProcessingMetrics? ProcessingMetrics { get; private set; }
-    public string? DetectionPreviewUrl { get; private set; }
+    public List<DetectionPreview>? DetectionPreviews { get; private set; }
 
     private RedactionJob() { }
 
@@ -65,11 +65,13 @@ public class RedactionJob : Entity
         UpdateTimestamp();
     }
 
-    public void MarkDetectionComplete(DetectionSummary summary, string? previewUrl = null)
+    public void MarkDetectionComplete(
+        DetectionSummary summary,
+        List<DetectionPreview>? previews = null)
     {
         EnsureStatus(RedactionJobStatus.Detecting);
         DetectionSummary = summary ?? throw new ArgumentNullException(nameof(summary));
-        DetectionPreviewUrl = previewUrl;
+        DetectionPreviews = previews;
         Status = RedactionJobStatus.AwaitingReview;
         UpdateTimestamp();
 
