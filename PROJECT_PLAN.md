@@ -19,7 +19,7 @@ The inference service currently runs in mock mode, returning random bounding box
 ---
 
 ### 3. Detection Preview Image Generation
-**Status:** Not Started
+**Status:** Complete
 
 When detection completes, the worker should render bounding boxes onto an anchor frame, upload that image to blob storage, and populate the job's `detectionPreviewUrl` field. The frontend's AwaitingReview step should then display this image so users can visually confirm what was detected before approving redaction. Right now users confirm blind with only an object count.
 
