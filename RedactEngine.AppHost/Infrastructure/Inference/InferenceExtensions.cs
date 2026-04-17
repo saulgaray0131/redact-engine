@@ -17,6 +17,6 @@ public static class InferenceExtensions
                 appDirectory: "../RedactEngine.InferenceService",
                 app: "app.main:app")
             .WithHttpHealthCheck("/health")
-            .WithEnvironment("INFERENCE_MODE", "mock");
+            .WithEnvironment("INFERENCE_MODE", "real");
     }
 }

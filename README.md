@@ -43,7 +43,7 @@ graph TD
 | Backend | .NET 10, ASP.NET Core, EF Core |
 | Database | PostgreSQL |
 | Blob Storage | Azure Blob Storage (Azurite locally) |
-| Inference | Python 3.12, FastAPI, OpenCV, Grounding DINO + SAM 2 (mock mode) |
+| Inference | Python 3.12+, FastAPI, OpenCV, Grounding DINO (real) + SAM 2 (planned) |
 | Messaging | Dapr Pub/Sub (Azure Service Bus Queues) |
 | Frontend | React 19, Vite, TypeScript, TanStack Query |
 | Styling | Tailwind CSS, shadcn/ui |
@@ -95,7 +95,26 @@ git clone <repo-url>
 cd RedactEngine
 ```
 
-### 2. Run the project
+### 2. Set up the inference service venv (one-time)
+
+Aspire runs the Python inference service from a local virtual environment, but does **not** install its dependencies automatically. Run this once per clone (and again whenever `requirements.txt` changes):
+
+```bash
+cd RedactEngine.InferenceService
+python -m venv .venv
+
+# Windows
+.venv/Scripts/pip install -r requirements.txt
+
+# macOS / Linux
+.venv/bin/pip install -r requirements.txt
+```
+
+The first `/detect` or `/redact` request downloads the Grounding DINO weights (~700 MB) to `~/.cache/huggingface`. Subsequent runs load from that cache.
+
+> **Fast-iteration mode:** set `INFERENCE_MODE=mock` to skip model loading and return synthetic detections. Useful for CI and quick frontend work.
+
+### 3. Run the project
 
 Make sure Docker Desktop is running, then pick one of these options. Aspire automatically installs frontend dependencies (`pnpm install`) on startup.
 
@@ -111,7 +130,7 @@ Make sure Docker Desktop is running, then pick one of these options. Aspire auto
 dotnet run --project RedactEngine.AppHost
 ```
 
-### 3. Open the app
+### 4. Open the app
 
 Once running, the **Aspire dashboard** opens automatically in your browser. From there you can see all services, logs, and traces.
 

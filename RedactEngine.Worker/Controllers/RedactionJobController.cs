@@ -3,9 +3,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RedactEngine.Application.Common;
 using RedactEngine.Application.Common.Interfaces;
+using RedactEngine.Domain.Entities;
 using RedactEngine.Domain.ValueObjects;
 using RedactEngine.Shared.Contracts;
 using RedactEngine.Shared.PubSub;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -25,6 +27,12 @@ public sealed class RedactionJobController(
         PropertyNameCaseInsensitive = true
     };
 
+    // In-flight guard against Dapr pub/sub redelivery while a long-running
+    // inference call is still in progress. Pub/sub brokers redeliver when the
+    // subscriber HTTP call exceeds their visibility timeout; the status guard
+    // below catches *post-completion* redeliveries, this catches *concurrent* ones.
+    private static readonly ConcurrentDictionary<Guid, byte> InFlightJobs = new();
+
     [Topic(DetectionPubSub.ComponentName, DetectionPubSub.TopicName)]
     [HttpPost("redaction/detection/requested")]
     public async Task<IActionResult> ProcessDetectionAsync(
@@ -33,12 +41,28 @@ public sealed class RedactionJobController(
     {
         logger.LogInformation("Processing detection for job {JobId} with prompt: {Prompt}", message.JobId, message.Prompt);
 
+        if (!InFlightJobs.TryAdd(message.JobId, 0))
+        {
+            logger.LogInformation("Detection for job {JobId} already in flight, ACKing duplicate delivery", message.JobId);
+            return Ok();
+        }
+
         var job = await db.RedactionJobs
             .FirstOrDefaultAsync(j => j.Id == message.JobId, cancellationToken);
 
         if (job is null)
         {
             logger.LogWarning("Redaction job {JobId} not found, skipping", message.JobId);
+            InFlightJobs.TryRemove(message.JobId, out _);
+            return Ok();
+        }
+
+        if (job.Status != RedactionJobStatus.Pending)
+        {
+            logger.LogInformation(
+                "Detection for job {JobId} already past Pending (status: {Status}), ACKing redelivery",
+                message.JobId, job.Status);
+            InFlightJobs.TryRemove(message.JobId, out _);
             return Ok();
         }
 
@@ -78,19 +102,26 @@ public sealed class RedactionJobController(
                 allLabels,
                 anchorDetections);
 
+            var previews = await UploadDetectionPreviewsAsync(
+                message.JobId, detectResult.Previews, cancellationToken);
+
             stopwatch.Stop();
-            job.MarkDetectionComplete(summary);
+            job.MarkDetectionComplete(summary, previews);
             await db.SaveChangesAsync(cancellationToken);
 
             logger.LogInformation(
-                "Detection for job {JobId} completed: {DetectionCount} detections in {ElapsedMs}ms",
-                message.JobId, totalDetections, stopwatch.ElapsedMilliseconds);
+                "Detection for job {JobId} completed: {DetectionCount} detections, {PreviewCount} previews in {ElapsedMs}ms",
+                message.JobId, totalDetections, previews?.Count ?? 0, stopwatch.ElapsedMilliseconds);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Detection for job {JobId} failed", message.JobId);
             job.MarkFailed(ex.Message.Length > 2000 ? ex.Message[..2000] : ex.Message);
             await db.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            InFlightJobs.TryRemove(message.JobId, out _);
         }
 
         return Ok();
@@ -104,16 +135,31 @@ public sealed class RedactionJobController(
     {
         logger.LogInformation("Processing redaction export for job {JobId}", message.JobId);
 
+        if (!InFlightJobs.TryAdd(message.JobId, 0))
+        {
+            logger.LogInformation("Redaction for job {JobId} already in flight, ACKing duplicate delivery", message.JobId);
+            return Ok();
+        }
+
         var job = await db.RedactionJobs
             .FirstOrDefaultAsync(j => j.Id == message.JobId, cancellationToken);
 
         if (job is null)
         {
             logger.LogWarning("Redaction job {JobId} not found, skipping", message.JobId);
+            InFlightJobs.TryRemove(message.JobId, out _);
             return Ok();
         }
 
-        // Job is already in Redacting status (set by the API confirm endpoint)
+        if (job.Status != RedactionJobStatus.Redacting)
+        {
+            logger.LogInformation(
+                "Redaction for job {JobId} already past Redacting (status: {Status}), ACKing redelivery",
+                message.JobId, job.Status);
+            InFlightJobs.TryRemove(message.JobId, out _);
+            return Ok();
+        }
+
         var stopwatch = Stopwatch.StartNew();
 
         try
@@ -144,8 +190,45 @@ public sealed class RedactionJobController(
             job.MarkFailed(ex.Message.Length > 2000 ? ex.Message[..2000] : ex.Message);
             await db.SaveChangesAsync(cancellationToken);
         }
+        finally
+        {
+            InFlightJobs.TryRemove(message.JobId, out _);
+        }
 
         return Ok();
+    }
+
+    private async Task<List<DetectionPreview>?> UploadDetectionPreviewsAsync(
+        Guid jobId,
+        List<DetectionPreviewDto>? payloads,
+        CancellationToken cancellationToken)
+    {
+        if (payloads is null || payloads.Count == 0)
+            return null;
+
+        var previews = new List<DetectionPreview>(payloads.Count);
+        foreach (var payload in payloads)
+        {
+            try
+            {
+                var bytes = Convert.FromBase64String(payload.ImageBase64);
+                using var stream = new MemoryStream(bytes);
+                var url = await blobService.UploadAsync(
+                    stream,
+                    $"preview_{jobId}_{payload.FrameIndex}.jpg",
+                    "image/jpeg",
+                    cancellationToken);
+                previews.Add(new DetectionPreview(payload.FrameIndex, payload.TimestampMs, url));
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex,
+                    "Failed to upload preview frame {FrameIndex} for job {JobId}",
+                    payload.FrameIndex, jobId);
+            }
+        }
+
+        return previews.Count > 0 ? previews : null;
     }
 
     private async Task<DetectionResultDto> CallDetectAsync(

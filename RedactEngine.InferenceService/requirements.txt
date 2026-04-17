@@ -4,3 +4,10 @@ python-multipart==0.0.20
 numpy==2.2.4
 opencv-python-headless==4.11.0.86
 Pillow==11.2.1
+# torch is installed separately in the Dockerfile from the CPU-only PyTorch index.
+# For local dev (Python 3.13 venv), `pip install -r requirements.txt` will pull
+# a torch wheel from PyPI. Windows/macOS PyPI wheels are CPU-only by default.
+torch>=2.6
+transformers==4.46.3
+timm==1.0.11
+accelerate==1.1.1

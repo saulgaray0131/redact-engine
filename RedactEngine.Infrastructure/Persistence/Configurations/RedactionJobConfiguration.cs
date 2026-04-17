@@ -43,8 +43,11 @@ public class RedactionJobConfiguration : IEntityTypeConfiguration<RedactionJob>
         builder.Property(j => j.ErrorMessage)
             .HasMaxLength(2000);
 
-        builder.Property(j => j.DetectionPreviewUrl)
-            .HasMaxLength(2000);
+        builder.Property(j => j.DetectionPreviews)
+            .HasConversion(new NullableJsonValueConverter<List<DetectionPreview>>())
+            .HasColumnType("jsonb");
+        builder.Property(j => j.DetectionPreviews)
+            .Metadata.SetValueComparer(JsonValueComparer.CreateNullable<List<DetectionPreview>>());
 
         builder.Property(j => j.VideoMetadata)
             .HasConversion(new NullableJsonValueConverter<VideoMetadata>())
