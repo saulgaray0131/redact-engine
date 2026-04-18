@@ -26,7 +26,7 @@ When detection completes, the worker should render bounding boxes onto an anchor
 ---
 
 ### 4. Wire Up SAM 2 for Mask-Level Tracking
-**Status:** Not Started
+**Status:** In Progress
 
 The proposal describes a two-stage pipeline: Grounding DINO localizes objects in an anchor frame, then SAM 2 propagates pixel-accurate masks across all remaining frames. Currently redaction is applied using bounding boxes only. Integrating SAM 2 would upgrade the pipeline to mask-level redaction that handles occlusions and appearance changes, producing significantly cleaner output especially for irregular shapes.
 

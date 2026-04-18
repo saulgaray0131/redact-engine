@@ -3,7 +3,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libgl1 libglib2.0-0 ffmpeg && \
+    apt-get install -y --no-install-recommends libgl1 libglib2.0-0 ffmpeg git curl && \
     rm -rf /var/lib/apt/lists/*
 
 COPY RedactEngine.InferenceService/requirements.txt .
@@ -14,6 +14,13 @@ ENV HF_HOME=/app/.cache/huggingface
 RUN python -c "from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection; \
 AutoProcessor.from_pretrained('IDEA-Research/grounding-dino-tiny'); \
 AutoModelForZeroShotObjectDetection.from_pretrained('IDEA-Research/grounding-dino-tiny')"
+
+# Pre-download the SAM 2 checkpoint so the container is self-contained at runtime.
+# sam2.1_hiera_tiny is ~155 MB; hosted by Meta AI Research.
+ENV SAM2_CHECKPOINT=/app/checkpoints/sam2.1_hiera_tiny.pt
+RUN mkdir -p /app/checkpoints && \
+    curl -fsSL -o /app/checkpoints/sam2.1_hiera_tiny.pt \
+      https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt
 
 COPY RedactEngine.InferenceService/app/ ./app/
 
