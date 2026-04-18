@@ -40,7 +40,7 @@ The proposal commits to quantitative evaluation on two public benchmarks. LVIS (
 ---
 
 ### 6. Natural Language Prompt Translation (Azure OpenAI)
-**Status:** Not Started
+**Status:** Complete
 
 Grounding DINO expects prompts in a specific format — short, period-separated noun phrases like `person. license plate. laptop screen.` — but users naturally write instructions like "blur out anyone walking past and any visible screens." Today the user's raw prompt is passed straight to DINO, and detection quality suffers when phrasing doesn't match what the model was trained on. Add an Azure OpenAI-backed translation step that converts free-form user intent into a DINO-compatible prompt.
 
