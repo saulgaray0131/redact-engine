@@ -10,11 +10,11 @@ resource "azurerm_log_analytics_workspace" "logs" {
 }
 
 resource "azurerm_application_insights" "appinsights" {
-  name                = "${local.resource_prefix}-appinsights"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-  application_type    = "web"
-  workspace_id        = azurerm_log_analytics_workspace.logs.id
+  name                 = "${local.resource_prefix}-appinsights"
+  location             = azurerm_resource_group.rg.location
+  resource_group_name  = azurerm_resource_group.rg.name
+  application_type     = "web"
+  workspace_id         = azurerm_log_analytics_workspace.logs.id
   daily_data_cap_in_gb = var.environment == "prod" ? 10 : 1
-  tags                = local.common_tags
+  tags                 = local.common_tags
 }

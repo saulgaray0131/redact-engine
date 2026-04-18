@@ -24,6 +24,17 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork>(provider => provider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<IBlobService, AzureBlobService>();
 
+        services.Configure<LlmOptions>(configuration.GetSection(LlmOptions.SectionName));
+        var llmMode = configuration[$"{LlmOptions.SectionName}:Mode"] ?? "mock";
+        if (string.Equals(llmMode, "azure-openai", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddHttpClient<ILlmPromptTranslator, AzureOpenAiPromptTranslator>();
+        }
+        else
+        {
+            services.AddScoped<ILlmPromptTranslator, MockPromptTranslator>();
+        }
+
         return services;
     }
 }

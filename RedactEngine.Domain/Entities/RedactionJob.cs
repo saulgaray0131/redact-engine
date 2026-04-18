@@ -9,6 +9,7 @@ public class RedactionJob : Entity
     private const int MaxPromptLength = 1000;
 
     public string Prompt { get; private set; } = string.Empty;
+    public string DetectionPrompt { get; private set; } = string.Empty;
     public RedactionStyle RedactionStyle { get; private set; }
     public double ConfidenceThreshold { get; private set; }
     public string OriginalVideoUrl { get; private set; } = string.Empty;
@@ -25,6 +26,7 @@ public class RedactionJob : Entity
 
     public RedactionJob(
         string prompt,
+        string detectionPrompt,
         string originalVideoUrl,
         string originalFileName,
         RedactionStyle redactionStyle = RedactionStyle.Blur,
@@ -34,10 +36,15 @@ public class RedactionJob : Entity
             throw new ArgumentException("Prompt is required.", nameof(prompt));
         if (prompt.Trim().Length > MaxPromptLength)
             throw new ArgumentException($"Prompt must not exceed {MaxPromptLength} characters.", nameof(prompt));
+        if (string.IsNullOrWhiteSpace(detectionPrompt))
+            throw new ArgumentException("Detection prompt is required.", nameof(detectionPrompt));
+        if (detectionPrompt.Trim().Length > MaxPromptLength)
+            throw new ArgumentException($"Detection prompt must not exceed {MaxPromptLength} characters.", nameof(detectionPrompt));
         if (confidenceThreshold is < 0 or > 1)
             throw new ArgumentOutOfRangeException(nameof(confidenceThreshold), "Confidence threshold must be between 0 and 1.");
 
         Prompt = prompt.Trim();
+        DetectionPrompt = detectionPrompt.Trim();
         OriginalVideoUrl = string.IsNullOrWhiteSpace(originalVideoUrl)
             ? throw new ArgumentException("Original video URL is required.", nameof(originalVideoUrl))
             : originalVideoUrl;
@@ -48,7 +55,7 @@ public class RedactionJob : Entity
         ConfidenceThreshold = confidenceThreshold;
         Status = RedactionJobStatus.Pending;
 
-        AddDomainEvent(new RedactionJobCreatedEvent(Id, Prompt));
+        AddDomainEvent(new RedactionJobCreatedEvent(Id, Prompt, DetectionPrompt));
     }
 
     public void MarkDetecting()

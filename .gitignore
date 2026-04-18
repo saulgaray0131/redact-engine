@@ -362,6 +362,10 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 RedactEngine.AppHost/terraform/.terraform.lock.hcl
-RedactEngine.AppHost/terraform/.terraform/providers/*
+RedactEngine.AppHost/terraform/.terraform/
+RedactEngine.AppHost/terraform/*.tfstate
+RedactEngine.AppHost/terraform/*.tfstate.backup
+RedactEngine.AppHost/terraform/*_override.tf
+RedactEngine.AppHost/terraform/*.tfplan
 RedactEngine.Web/dist
 .claude/

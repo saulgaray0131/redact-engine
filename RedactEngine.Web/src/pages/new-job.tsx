@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Upload, FileVideo } from 'lucide-react'
+import { Upload, FileVideo, Sparkles, Loader2, AlertTriangle } from 'lucide-react'
 import { Radio } from '@base-ui/react/radio'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -9,6 +9,7 @@ import { RadioGroup } from '@/components/ui/radio-group'
 import { Slider } from '@/components/ui/slider'
 import { Separator } from '@/components/ui/separator'
 import { useCreateRedactJob } from '@/hooks/use-redact-jobs'
+import { usePromptTranslation } from '@/hooks/use-prompt-translation'
 import { cn } from '@/lib/utils'
 import type { RedactionStyle } from '@/types'
 
@@ -21,11 +22,28 @@ const REDACTION_STYLES: { value: RedactionStyle; label: string; description: str
 export default function NewJobPage() {
   const [file, setFile] = useState<File | null>(null)
   const [prompt, setPrompt] = useState('')
+  const [detectionPrompt, setDetectionPrompt] = useState('')
+  const [translationWarning, setTranslationWarning] = useState<string | null>(null)
   const [redactionStyle, setRedactionStyle] = useState<RedactionStyle>('Blur')
   const [confidenceThreshold, setConfidenceThreshold] = useState(0.3)
   const [error, setError] = useState<string | null>(null)
   const navigate = useNavigate()
   const mutation = useCreateRedactJob()
+  const translate = usePromptTranslation()
+
+  function handleTranslate() {
+    if (!prompt.trim()) return
+    setTranslationWarning(null)
+    translate.mutate(prompt.trim(), {
+      onSuccess: (data) => {
+        setDetectionPrompt(data.detectionPrompt)
+        setTranslationWarning(data.isFallback ? data.warning : null)
+      },
+      onError: (err) => {
+        setTranslationWarning(err instanceof Error ? err.message : 'Translation failed')
+      },
+    })
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -33,7 +51,13 @@ export default function NewJobPage() {
 
     setError(null)
     mutation.mutate(
-      { file, prompt: prompt.trim(), redactionStyle, confidenceThreshold },
+      {
+        file,
+        prompt: prompt.trim(),
+        detectionPrompt: detectionPrompt.trim() || undefined,
+        redactionStyle,
+        confidenceThreshold,
+      },
       {
         onSuccess: (data) => {
           navigate(`/app/jobs/${data.jobId}`)
@@ -82,6 +106,44 @@ export default function NewJobPage() {
               placeholder='Describe what should be redacted, e.g., "blur all faces" or "redact license plates"'
               rows={4}
             />
+          </div>
+
+          <div className="flex flex-col gap-2 rounded-lg border border-dashed p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-col">
+                <label className="text-sm font-medium">Detection Prompt (Grounding DINO)</label>
+                <p className="text-xs text-muted-foreground">
+                  Translate your instructions into short object phrases. Edit if needed, or leave blank to auto-translate on submit.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleTranslate}
+                disabled={!prompt.trim() || translate.isPending}
+              >
+                {translate.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Sparkles className="size-4" />
+                )}
+                Translate
+              </Button>
+            </div>
+            <Textarea
+              value={detectionPrompt}
+              onChange={(e) => setDetectionPrompt(e.target.value)}
+              placeholder='e.g., "person. license plate. laptop screen."'
+              rows={2}
+              className="font-mono text-sm"
+            />
+            {translationWarning && (
+              <div className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                <span>{translationWarning}</span>
+              </div>
+            )}
           </div>
 
           <Separator />

@@ -68,3 +68,12 @@ output "storage_blob_endpoint" {
   value = azurerm_storage_account.storage.primary_blob_endpoint
 }
 
+# --- Azure OpenAI ---
+output "azure_openai_endpoint" {
+  value = azurerm_cognitive_account.openai.endpoint
+}
+
+output "azure_openai_deployment" {
+  value = azurerm_cognitive_deployment.gpt_4o_mini.name
+}
+

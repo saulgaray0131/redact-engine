@@ -39,7 +39,7 @@ public sealed class RedactionJobController(
         [FromBody] DetectionRequestedMessage message,
         CancellationToken cancellationToken)
     {
-        logger.LogInformation("Processing detection for job {JobId} with prompt: {Prompt}", message.JobId, message.Prompt);
+        logger.LogInformation("Processing detection for job {JobId} with detection prompt: {DetectionPrompt}", message.JobId, message.DetectionPrompt);
 
         if (!InFlightJobs.TryAdd(message.JobId, 0))
         {
@@ -246,7 +246,7 @@ public sealed class RedactionJobController(
         var videoContent = new ByteArrayContent(videoBytes);
         videoContent.Headers.ContentType = new MediaTypeHeaderValue("video/mp4");
         content.Add(videoContent, "video", message.OriginalFileName);
-        content.Add(new StringContent(message.Prompt), "prompt");
+        content.Add(new StringContent(message.DetectionPrompt), "prompt");
         content.Add(new StringContent(message.ConfidenceThreshold.ToString()), "confidence_threshold");
 
         var response = await client.PostAsync("/detect", content, cancellationToken);
@@ -272,7 +272,7 @@ public sealed class RedactionJobController(
         var videoContent = new ByteArrayContent(videoBytes);
         videoContent.Headers.ContentType = new MediaTypeHeaderValue("video/mp4");
         content.Add(videoContent, "video", message.OriginalFileName);
-        content.Add(new StringContent(message.Prompt), "prompt");
+        content.Add(new StringContent(message.DetectionPrompt), "prompt");
         content.Add(new StringContent(message.RedactionStyle), "redaction_style");
         content.Add(new StringContent(message.ConfidenceThreshold.ToString()), "confidence_threshold");
 

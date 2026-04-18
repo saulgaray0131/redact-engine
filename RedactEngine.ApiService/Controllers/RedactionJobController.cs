@@ -13,6 +13,7 @@ namespace RedactEngine.ApiService.Controllers;
 public sealed class RedactionJobController(
     IApplicationDbContext db,
     IBlobService blobService,
+    ILlmPromptTranslator promptTranslator,
     DaprClient daprClient) : ControllerBase
 {
     /// <summary>
@@ -23,6 +24,7 @@ public sealed class RedactionJobController(
     public async Task<ActionResult<SubmitRedactionJobResponse>> SubmitAsync(
         IFormFile video,
         [FromForm] string prompt,
+        [FromForm] string? detectionPrompt,
         [FromForm] string? redactionStyle,
         [FromForm] double? confidenceThreshold,
         CancellationToken cancellationToken)
@@ -38,12 +40,27 @@ public sealed class RedactionJobController(
             : RedactionStyle.Blur;
         var threshold = confidenceThreshold ?? 0.3;
 
+        // If the client pre-translated (preview flow on new-job form), use that.
+        // Otherwise translate here so DetectionPrompt is always populated.
+        string finalDetectionPrompt;
+        string? translationWarning = null;
+        if (!string.IsNullOrWhiteSpace(detectionPrompt))
+        {
+            finalDetectionPrompt = detectionPrompt;
+        }
+        else
+        {
+            var translation = await promptTranslator.TranslateAsync(prompt, cancellationToken);
+            finalDetectionPrompt = translation.DetectionPrompt;
+            translationWarning = translation.IsFallback ? translation.Warning : null;
+        }
+
         // Upload original video to blob storage
         await using var stream = video.OpenReadStream();
         var videoUrl = await blobService.UploadAsync(stream, video.FileName, video.ContentType, cancellationToken);
 
         // Create job entity
-        var job = new RedactionJob(prompt, videoUrl, video.FileName, style, threshold);
+        var job = new RedactionJob(prompt, finalDetectionPrompt, videoUrl, video.FileName, style, threshold);
         db.RedactionJobs.Add(job);
         await db.SaveChangesAsync(cancellationToken);
 
@@ -53,14 +70,14 @@ public sealed class RedactionJobController(
             DetectionPubSub.TopicName,
             new DetectionRequestedMessage(
                 job.Id,
-                job.Prompt,
+                job.DetectionPrompt,
                 job.ConfidenceThreshold,
                 job.OriginalVideoUrl,
                 job.OriginalFileName,
                 DateTimeOffset.UtcNow),
             cancellationToken);
 
-        return Accepted(new SubmitRedactionJobResponse(job.Id, job.Status.ToString()));
+        return Accepted(new SubmitRedactionJobResponse(job.Id, job.Status.ToString(), translationWarning));
     }
 
     /// <summary>
@@ -117,7 +134,7 @@ public sealed class RedactionJobController(
             RedactionExportPubSub.TopicName,
             new RedactionExportRequestedMessage(
                 job.Id,
-                job.Prompt,
+                job.DetectionPrompt,
                 job.RedactionStyle.ToString().ToLowerInvariant(),
                 job.ConfidenceThreshold,
                 job.OriginalVideoUrl,
@@ -185,6 +202,7 @@ public sealed class RedactionJobController(
     private static RedactionJobResponse MapToResponse(RedactionJob job) => new(
         job.Id,
         job.Prompt,
+        job.DetectionPrompt,
         job.RedactionStyle.ToString(),
         job.ConfidenceThreshold,
         job.OriginalVideoUrl,
@@ -202,13 +220,14 @@ public sealed class RedactionJobController(
         job.UpdatedAt);
 }
 
-public sealed record SubmitRedactionJobResponse(Guid JobId, string Status);
+public sealed record SubmitRedactionJobResponse(Guid JobId, string Status, string? TranslationWarning);
 
 public sealed record DetectionPreviewResponse(int FrameIndex, int TimestampMs, string Url);
 
 public sealed record RedactionJobResponse(
     Guid Id,
     string Prompt,
+    string DetectionPrompt,
     string RedactionStyle,
     double ConfidenceThreshold,
     string OriginalVideoUrl,

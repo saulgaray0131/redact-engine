@@ -18,6 +18,7 @@ export interface DetectionPreview {
 export interface RedactJob {
   id: string
   prompt: string
+  detectionPrompt: string
   redactionStyle: RedactionStyle
   confidenceThreshold: number
   originalVideoUrl: string
@@ -36,11 +37,19 @@ export interface RedactJob {
 export interface SubmitJobResponse {
   jobId: string
   status: string
+  translationWarning: string | null
 }
 
 export interface CreateRedactJobRequest {
   file: File
   prompt: string
+  detectionPrompt?: string
   redactionStyle: RedactionStyle
   confidenceThreshold: number
+}
+
+export interface TranslatePromptResponse {
+  detectionPrompt: string
+  isFallback: boolean
+  warning: string | null
 }
