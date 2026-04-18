@@ -5,6 +5,9 @@ export async function createRedactJob(request: CreateRedactJobRequest): Promise<
   const formData = new FormData();
   formData.append('video', request.file);
   formData.append('prompt', request.prompt);
+  if (request.detectionPrompt && request.detectionPrompt.trim()) {
+    formData.append('detectionPrompt', request.detectionPrompt.trim());
+  }
   formData.append('redactionStyle', request.redactionStyle);
   formData.append('confidenceThreshold', request.confidenceThreshold.toString());
   return apiClient.postForm<SubmitJobResponse>('/api/redaction-jobs', formData);

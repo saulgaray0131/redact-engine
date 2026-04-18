@@ -18,6 +18,10 @@ public class RedactionJobConfiguration : IEntityTypeConfiguration<RedactionJob>
             .HasMaxLength(1000)
             .IsRequired();
 
+        builder.Property(j => j.DetectionPrompt)
+            .HasMaxLength(1000)
+            .IsRequired();
+
         builder.Property(j => j.RedactionStyle)
             .HasConversion<int>()
             .IsRequired();

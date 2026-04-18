@@ -8,7 +8,7 @@ public static class DetectionPubSub
 
 public sealed record DetectionRequestedMessage(
     Guid JobId,
-    string Prompt,
+    string DetectionPrompt,
     double ConfidenceThreshold,
     string OriginalVideoUrl,
     string OriginalFileName,

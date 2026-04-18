@@ -19,14 +19,16 @@ public sealed class UserCreatedEvent : DomainEvent
 
 public sealed class RedactionJobCreatedEvent : DomainEvent
 {
-    public RedactionJobCreatedEvent(Guid jobId, string prompt)
+    public RedactionJobCreatedEvent(Guid jobId, string prompt, string detectionPrompt)
     {
         JobId = jobId;
         Prompt = prompt;
+        DetectionPrompt = detectionPrompt;
     }
 
     public Guid JobId { get; }
     public string Prompt { get; }
+    public string DetectionPrompt { get; }
 }
 
 public sealed class DetectionCompletedEvent : DomainEvent

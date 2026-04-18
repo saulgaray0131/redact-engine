@@ -34,6 +34,11 @@ resource "azurerm_container_app" "api" {
     value = "Server=${azurerm_postgresql_flexible_server.postgres.fqdn};Database=core;User Id=adminuser;Password=${var.postgres_admin_password};SSL Mode=Require;Maximum Pool Size=${var.environment == "prod" ? 30 : 10};Minimum Pool Size=1;"
   }
 
+  secret {
+    name  = "azure-openai-key"
+    value = azurerm_cognitive_account.openai.primary_access_key
+  }
+
   identity {
     type         = "UserAssigned"
     identity_ids = [azurerm_user_assigned_identity.app_identity.id]
@@ -92,15 +97,36 @@ resource "azurerm_container_app" "api" {
         value = "http://+:8080"
       }
 
+      # --- Azure OpenAI (prompt translation) ---
+      env {
+        name  = "Llm__Mode"
+        value = "azure-openai"
+      }
+
+      env {
+        name  = "Llm__Endpoint"
+        value = azurerm_cognitive_account.openai.endpoint
+      }
+
+      env {
+        name  = "Llm__Deployment"
+        value = azurerm_cognitive_deployment.gpt_4o_mini.name
+      }
+
+      env {
+        name        = "Llm__ApiKey"
+        secret_name = "azure-openai-key"
+      }
+
       # --- Health Probes (30s interval to reduce App Insights telemetry volume) ---
       liveness_probe {
         transport = "HTTP"
         path      = "/alive"
         port      = 8080
 
-        initial_delay    = 5
-        interval_seconds = 240
-        timeout          = 5
+        initial_delay           = 5
+        interval_seconds        = 240
+        timeout                 = 5
         failure_count_threshold = 3
       }
 
@@ -109,8 +135,8 @@ resource "azurerm_container_app" "api" {
         path      = "/health"
         port      = 8080
 
-        interval_seconds = 240
-        timeout          = 5
+        interval_seconds        = 240
+        timeout                 = 5
         failure_count_threshold = 3
       }
 
@@ -119,8 +145,8 @@ resource "azurerm_container_app" "api" {
         path      = "/health"
         port      = 8080
 
-        interval_seconds = 30
-        timeout          = 5
+        interval_seconds        = 30
+        timeout                 = 5
         failure_count_threshold = 10
       }
     }
@@ -232,9 +258,9 @@ resource "azurerm_container_app" "worker" {
         path      = "/alive"
         port      = 8080
 
-        initial_delay    = 5
-        interval_seconds = 30
-        timeout          = 5
+        initial_delay           = 5
+        interval_seconds        = 30
+        timeout                 = 5
         failure_count_threshold = 3
       }
 
@@ -243,8 +269,8 @@ resource "azurerm_container_app" "worker" {
         path      = "/health"
         port      = 8080
 
-        interval_seconds = 30
-        timeout          = 5
+        interval_seconds        = 30
+        timeout                 = 5
         failure_count_threshold = 3
       }
 
@@ -253,8 +279,8 @@ resource "azurerm_container_app" "worker" {
         path      = "/health"
         port      = 8080
 
-        interval_seconds = 10
-        timeout          = 5
+        interval_seconds        = 10
+        timeout                 = 5
         failure_count_threshold = 10
       }
     }
@@ -311,9 +337,9 @@ resource "azurerm_container_app" "inference" {
         path      = "/alive"
         port      = 8000
 
-        initial_delay    = 10
-        interval_seconds = 200
-        timeout          = 5
+        initial_delay           = 10
+        interval_seconds        = 200
+        timeout                 = 5
         failure_count_threshold = 3
       }
 
@@ -322,8 +348,8 @@ resource "azurerm_container_app" "inference" {
         path      = "/health"
         port      = 8000
 
-        interval_seconds = 30
-        timeout          = 5
+        interval_seconds        = 30
+        timeout                 = 5
         failure_count_threshold = 3
       }
 
@@ -332,8 +358,8 @@ resource "azurerm_container_app" "inference" {
         path      = "/health"
         port      = 8000
 
-        interval_seconds = 10
-        timeout          = 5
+        interval_seconds        = 10
+        timeout                 = 5
         failure_count_threshold = 10
       }
     }

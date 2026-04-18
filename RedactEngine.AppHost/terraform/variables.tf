@@ -79,3 +79,22 @@ variable "admin_object_id" {
   description = "Azure AD Object ID for Key Vault admin access"
   default     = ""
 }
+
+# --- Cognitive Services / Azure OpenAI Variables ---
+variable "cognitive_location" {
+  type        = string
+  description = "Region for Azure OpenAI (must support the chosen model). Defaults to var.location."
+  default     = ""
+}
+
+variable "cognitive_sku" {
+  type        = string
+  description = "SKU for the Azure OpenAI cognitive account"
+  default     = "S0"
+}
+
+variable "cognitive_deployment_capacity" {
+  type        = number
+  description = "TPM capacity (in thousands) for the gpt-4o-mini deployment"
+  default     = 20
+}

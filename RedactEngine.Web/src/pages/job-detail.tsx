@@ -121,9 +121,17 @@ export default function JobDetailPage() {
         </CardHeader>
 
         <CardContent className="flex flex-col gap-4">
-          <section className="flex flex-col gap-1">
-            <h3 className="text-sm font-medium">Prompt</h3>
-            <p className="text-sm text-muted-foreground">{job.prompt}</p>
+          <section className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <h3 className="text-sm font-medium">Your Prompt</h3>
+              <p className="text-sm text-muted-foreground">{job.prompt}</p>
+            </div>
+            {job.detectionPrompt && job.detectionPrompt !== job.prompt && (
+              <div className="flex flex-col gap-1">
+                <h3 className="text-sm font-medium">Detection Prompt (Grounding DINO)</h3>
+                <p className="font-mono text-sm text-muted-foreground">{job.detectionPrompt}</p>
+              </div>
+            )}
           </section>
 
           <Separator />

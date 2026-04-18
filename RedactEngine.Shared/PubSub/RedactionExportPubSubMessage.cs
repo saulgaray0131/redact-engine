@@ -8,7 +8,7 @@ public static class RedactionExportPubSub
 
 public sealed record RedactionExportRequestedMessage(
     Guid JobId,
-    string Prompt,
+    string DetectionPrompt,
     string RedactionStyle,
     double ConfidenceThreshold,
     string OriginalVideoUrl,
