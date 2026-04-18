@@ -12,7 +12,7 @@ import {
   Play,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent, CardAction } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useRedactJobs, useDeleteRedactJob } from '@/hooks/use-redact-jobs';
@@ -108,11 +108,11 @@ export default function JobsPage() {
               <Link key={job.id} to={`/app/jobs/${job.id}`} className='group'>
                 <Card className='transition-shadow group-hover:ring-2 group-hover:ring-ring/30'>
                   <CardHeader>
-                    <div className='flex items-center justify-between'>
-                      <div className='flex items-center gap-2'>
-                        <FileVideo className='size-4 text-muted-foreground' />
-                        <CardTitle className='truncate'>{job.originalFileName}</CardTitle>
-                      </div>
+                    <div className='flex items-center gap-2 min-w-0'>
+                      <FileVideo className='size-4 text-muted-foreground shrink-0' />
+                      <CardTitle className='truncate'>{job.originalFileName}</CardTitle>
+                    </div>
+                    <CardAction>
                       <div className='flex items-center gap-2'>
                         <Badge variant={status.variant} className={cn(status.className)}>
                           <StatusIcon
@@ -132,7 +132,7 @@ export default function JobsPage() {
                           <Trash2 className='size-4' />
                         </Button>
                       </div>
-                    </div>
+                    </CardAction>
                   </CardHeader>
                   <CardContent className='flex flex-col gap-2'>
                     <p className='line-clamp-2 text-sm text-muted-foreground'>{job.prompt}</p>
