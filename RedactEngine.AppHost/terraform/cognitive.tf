@@ -24,7 +24,7 @@ resource "azurerm_cognitive_deployment" "gpt_4o_mini" {
   }
 
   sku {
-    name     = "Standard"
+    name     = "GlobalStandard"
     capacity = var.cognitive_deployment_capacity
   }
 }
