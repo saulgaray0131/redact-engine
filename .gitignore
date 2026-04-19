@@ -316,6 +316,10 @@ paket-files/
 __pycache__/
 *.pyc
 
+# SAM 2 / ML model checkpoints — do not commit large binary weights.
+RedactEngine.InferenceService/checkpoints/
+checkpoints/
+
 # Cake - Uncomment if you are using it
 # tools/**
 # !tools/packages.config

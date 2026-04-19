@@ -12,11 +12,20 @@ public static class InferenceExtensions
     public static IResourceBuilder<UvicornAppResource> AddRedactEngineInferenceService(
         this IDistributedApplicationBuilder builder)
     {
+        // Note on SAM 2 device selection: we intentionally do NOT force
+        // SAM2_DEVICE=mps on macOS. MPS + PYTORCH_ENABLE_MPS_FALLBACK tested
+        // slower than pure CPU for SAM 2 propagation because enough ops hit
+        // the fallback path that the MPS<->CPU tensor copy overhead dominates.
+        // The Python side's _select_sam2_device() defaults to CUDA if
+        // available, else CPU — which is the right behavior on every OS.
         return builder.AddUvicornApp(
                 name: "inference-service",
                 appDirectory: "../RedactEngine.InferenceService",
                 app: "app.main:app")
             .WithHttpHealthCheck("/health")
-            .WithEnvironment("INFERENCE_MODE", "real");
+            .WithEnvironment("INFERENCE_MODE", "real")
+            // HuggingFace tokenizers warn loudly when forked by uvicorn's
+            // reloader. Silences the noise without changing behavior.
+            .WithEnvironment("TOKENIZERS_PARALLELISM", "false");
     }
 }
