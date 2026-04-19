@@ -14,20 +14,36 @@ resource "azurerm_container_app_environment" "aca_env" {
 # serverless GPU workload profiles (PERFORMANCE_PLAN #1). The worker in
 # centralus reaches it cross-region over the public FQDN, gated by
 # X-Inference-Key. Log Analytics is reused cross-region from centralus.
-resource "azurerm_container_app_environment" "inference_gpu_env" {
-  name                       = "${local.resource_prefix}-inference-aca"
-  location                   = var.inference_location
-  resource_group_name        = azurerm_resource_group.rg.name
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
+#
+# Created via azapi because the azurerm provider always emits
+# minimumCount/maximumCount on workload_profile, which the
+# Consumption-GPU-NC8as-T4 SKU rejects. azapi sends only the fields set here.
+resource "azapi_resource" "inference_gpu_env" {
+  type      = "Microsoft.App/managedEnvironments@2024-03-01"
+  name      = "${local.resource_prefix}-inference-aca"
+  parent_id = azurerm_resource_group.rg.id
+  location  = var.inference_location
 
-  workload_profile {
-    name                  = "Consumption"
-    workload_profile_type = "Consumption"
-  }
-
-  workload_profile {
-    name                  = var.inference_workload_profile_name
-    workload_profile_type = "Consumption-GPU-NC8as-T4"
+  body = {
+    properties = {
+      appLogsConfiguration = {
+        destination = "log-analytics"
+        logAnalyticsConfiguration = {
+          customerId = azurerm_log_analytics_workspace.logs.workspace_id
+          sharedKey  = azurerm_log_analytics_workspace.logs.primary_shared_key
+        }
+      }
+      workloadProfiles = [
+        {
+          name                = "Consumption"
+          workloadProfileType = "Consumption"
+        },
+        {
+          name                = var.inference_workload_profile_name
+          workloadProfileType = "Consumption-GPU-NC8as-T4"
+        },
+      ]
+    }
   }
 
   tags = local.common_tags
@@ -331,7 +347,7 @@ resource "azurerm_container_app" "worker" {
 # --- 4. Inference Service ---
 resource "azurerm_container_app" "inference" {
   name                         = "${local.resource_prefix}-inference"
-  container_app_environment_id = azurerm_container_app_environment.inference_gpu_env.id
+  container_app_environment_id = azapi_resource.inference_gpu_env.id
   resource_group_name          = azurerm_resource_group.rg.name
   revision_mode                = "Single"
   workload_profile_name        = var.inference_workload_profile_name

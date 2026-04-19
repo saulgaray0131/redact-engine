@@ -6,6 +6,14 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 4.0"
     }
+    # azapi is used for the inference GPU managed environment only. The azurerm
+    # provider always emits minimumCount/maximumCount on workload_profile, which
+    # the Consumption-GPU SKU rejects with a 400. azapi lets us send the exact
+    # payload the ARM API accepts.
+    azapi = {
+      source  = "Azure/azapi"
+      version = "~> 2.0"
+    }
   }
 
   # Remote state in Azure Blob Storage.
@@ -31,4 +39,9 @@ provider "azurerm" {
   }
 
   subscription_id = var.subscription_id
+}
+
+provider "azapi" {
+  subscription_id = var.subscription_id
+  use_oidc        = true
 }
