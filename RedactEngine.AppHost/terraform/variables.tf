@@ -73,6 +73,25 @@ variable "inference_config" {
   description = "Scaling and sizing config for Inference Service"
 }
 
+variable "inference_location" {
+  type        = string
+  description = "Region for the inference service's Container App Environment. Must support Consumption-GPU workload profiles (e.g. eastus, westus3, swedencentral). Distinct from var.location so the GPU env can live apart from the rest of the stack."
+  default     = "eastus"
+}
+
+variable "inference_workload_profile_name" {
+  type        = string
+  description = "Logical name assigned to the GPU workload profile on the inference env. Referenced from azurerm_container_app.inference.workload_profile_name."
+  default     = "gpu-t4"
+}
+
+variable "inference_service_key" {
+  type        = string
+  sensitive   = true
+  description = "Shared secret required on X-Inference-Key header for worker -> inference calls. The inference app runs on a public FQDN once moved to its own env, so this gates access."
+  default     = ""
+}
+
 # --- Security Variables ---
 variable "admin_object_id" {
   type        = string

@@ -49,6 +49,10 @@ SAM2_CHECKPOINT = os.getenv("SAM2_CHECKPOINT", "./checkpoints/sam2.1_hiera_tiny.
 # each sampled frame's mask for the original frames closest to it. Tune via
 # SAM2_MAX_FRAMES; set to 0 to disable the cap.
 SAM2_MAX_FRAMES = int(os.getenv("SAM2_MAX_FRAMES", "32"))
+# Shared secret for cross-environment calls from the worker. When set, every
+# request except /alive and /health must carry X-Inference-Key. Unset in local
+# dev so the service stays open for Aspire.
+INFERENCE_SERVICE_KEY = os.getenv("INFERENCE_SERVICE_KEY")
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -113,6 +117,19 @@ app = FastAPI(
     version="0.2.0",
     lifespan=lifespan,
 )
+
+
+_PUBLIC_PATHS = {"/alive", "/health"}
+
+
+@app.middleware("http")
+async def _require_inference_key(request: Request, call_next):
+    if INFERENCE_SERVICE_KEY and request.url.path not in _PUBLIC_PATHS:
+        provided = request.headers.get("x-inference-key")
+        if provided != INFERENCE_SERVICE_KEY:
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return await call_next(request)
 
 
 # ── Models ────────────────────────────────────────────────────────────────────

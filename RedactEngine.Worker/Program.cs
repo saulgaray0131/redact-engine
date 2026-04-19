@@ -26,6 +26,16 @@ builder.Services.AddHttpClient("InferenceService", client =>
     // jobs aren't killed mid-propagation, which leaves the Python process
     // chewing CPU after the worker has already given up.
     client.Timeout = TimeSpan.FromHours(1);
+
+    // In prod the inference service lives in a separate ACA environment (eastus)
+    // and is reached over a public FQDN, so gate access with a shared secret.
+    // Unset in local Aspire, where the service is loopback-only.
+    var inferenceKey = builder.Configuration["InferenceService:ApiKey"]
+                      ?? Environment.GetEnvironmentVariable("INFERENCE_SERVICE_KEY");
+    if (!string.IsNullOrEmpty(inferenceKey))
+    {
+        client.DefaultRequestHeaders.Add("X-Inference-Key", inferenceKey);
+    }
 });
 
 var app = builder.Build();

@@ -41,6 +41,10 @@ output "worker_name" {
   value = azurerm_container_app.worker.name
 }
 
+output "inference_fqdn" {
+  value = azurerm_container_app.inference.ingress[0].fqdn
+}
+
 output "migration_job_name" {
   value = azurerm_container_app_job.db_migrator.name
 }

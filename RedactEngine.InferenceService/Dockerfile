@@ -7,7 +7,11 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY RedactEngine.InferenceService/requirements.txt .
-RUN pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu && \
+# Install torch built against CUDA 12.4 so the container can run on NVIDIA
+# GPUs when scheduled on an Azure Container Apps Consumption-GPU workload
+# profile. Version matches requirements.txt's torch>=2.6 floor so the next
+# pip install step doesn't silently replace this wheel with a PyPI default.
+RUN pip install --no-cache-dir torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124 && \
     pip install --no-cache-dir -r requirements.txt
 
 ENV HF_HOME=/app/.cache/huggingface

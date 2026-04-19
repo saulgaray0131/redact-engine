@@ -29,8 +29,15 @@ worker_config = {
 inference_config = {
   min_replicas = 0
   max_replicas = 1
-  cpu          = 1.0
-  memory       = "2.0Gi"
+  # Consumption-GPU-NC8as-T4 nodes are 8 vCPU / 56 GiB / 1x NVIDIA T4.
+  # Container allocation must match the node sku on GPU workload profiles.
+  cpu    = 8
+  memory = "56Gi"
 }
 
+# Inference service lives in its own ACA env in a GPU-supported region.
+# centralus does not offer Consumption-GPU workload profiles as of 2026-04.
+inference_location = "eastus"
+
 # admin_object_id: injected via TF_VAR_admin_object_id in CI
+# inference_service_key: injected via TF_VAR_inference_service_key in CI

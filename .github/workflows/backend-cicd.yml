@@ -10,6 +10,7 @@
 #   AZURE_SUBSCRIPTION_ID    - Target Azure subscription
 #   POSTGRES_ADMIN_PASSWORD  - PostgreSQL admin password
 #   ADMIN_OBJECT_ID          - (Optional) Azure AD Object ID for Key Vault admin
+#   INFERENCE_SERVICE_KEY    - Shared secret for worker -> inference calls (X-Inference-Key header)
 #
 # Runtime app secrets are loaded from Azure Key Vault by managed identity.
 ###############################################################################
@@ -124,6 +125,7 @@ jobs:
           TF_VAR_postgres_admin_password: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
           TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           TF_VAR_admin_object_id: ${{ secrets.ADMIN_OBJECT_ID }}
+          TF_VAR_inference_service_key: ${{ secrets.INFERENCE_SERVICE_KEY }}
 
       - name: Terraform Apply (Prod)
         working-directory: ${{ env.TERRAFORM_DIR }}

@@ -10,6 +10,29 @@ resource "azurerm_container_app_environment" "aca_env" {
   tags = local.common_tags
 }
 
+# Separate env for the inference service: lives in a region that supports
+# serverless GPU workload profiles (PERFORMANCE_PLAN #1). The worker in
+# centralus reaches it cross-region over the public FQDN, gated by
+# X-Inference-Key. Log Analytics is reused cross-region from centralus.
+resource "azurerm_container_app_environment" "inference_gpu_env" {
+  name                       = "${local.resource_prefix}-inference-aca"
+  location                   = var.inference_location
+  resource_group_name        = azurerm_resource_group.rg.name
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
+
+  workload_profile {
+    name                  = "Consumption"
+    workload_profile_type = "Consumption"
+  }
+
+  workload_profile {
+    name                  = var.inference_workload_profile_name
+    workload_profile_type = "Consumption-GPU-NC8as-T4"
+  }
+
+  tags = local.common_tags
+}
+
 resource "azurerm_role_assignment" "acr_pull" {
   scope                = azurerm_container_registry.acr.id
   role_definition_name = "AcrPull"
@@ -189,6 +212,11 @@ resource "azurerm_container_app" "worker" {
     value = "Server=${azurerm_postgresql_flexible_server.postgres.fqdn};Database=core;User Id=adminuser;Password=${var.postgres_admin_password};SSL Mode=Require;Maximum Pool Size=${var.environment == "prod" ? 30 : 10};Minimum Pool Size=1;"
   }
 
+  secret {
+    name  = "inference-key"
+    value = var.inference_service_key
+  }
+
   identity {
     type         = "UserAssigned"
     identity_ids = [azurerm_user_assigned_identity.app_identity.id]
@@ -249,7 +277,12 @@ resource "azurerm_container_app" "worker" {
 
       env {
         name  = "ConnectionStrings__InferenceService"
-        value = "http://${azurerm_container_app.inference.name}"
+        value = "https://${azurerm_container_app.inference.ingress[0].fqdn}"
+      }
+
+      env {
+        name        = "INFERENCE_SERVICE_KEY"
+        secret_name = "inference-key"
       }
 
       # --- Health Probes ---
@@ -298,9 +331,10 @@ resource "azurerm_container_app" "worker" {
 # --- 4. Inference Service ---
 resource "azurerm_container_app" "inference" {
   name                         = "${local.resource_prefix}-inference"
-  container_app_environment_id = azurerm_container_app_environment.aca_env.id
+  container_app_environment_id = azurerm_container_app_environment.inference_gpu_env.id
   resource_group_name          = azurerm_resource_group.rg.name
   revision_mode                = "Single"
+  workload_profile_name        = var.inference_workload_profile_name
 
   identity {
     type         = "UserAssigned"
@@ -310,6 +344,11 @@ resource "azurerm_container_app" "inference" {
   registry {
     server   = azurerm_container_registry.acr.login_server
     identity = azurerm_user_assigned_identity.app_identity.id
+  }
+
+  secret {
+    name  = "inference-key"
+    value = var.inference_service_key
   }
 
   template {
@@ -324,7 +363,12 @@ resource "azurerm_container_app" "inference" {
 
       env {
         name  = "INFERENCE_MODE"
-        value = "mock"
+        value = "real"
+      }
+
+      env {
+        name        = "INFERENCE_SERVICE_KEY"
+        secret_name = "inference-key"
       }
 
       env {
@@ -365,9 +409,13 @@ resource "azurerm_container_app" "inference" {
     }
   }
 
+  # External ingress so the worker in centralus can reach the inference app
+  # across environments. Access is gated by the X-Inference-Key header
+  # (enforced in app/main.py).
   ingress {
-    external_enabled = false
+    external_enabled = true
     target_port      = 8000
+    transport        = "auto"
     traffic_weight {
       percentage      = 100
       latest_revision = true
