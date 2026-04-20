@@ -27,7 +27,13 @@ worker_config = {
 }
 
 inference_config = {
-  min_replicas = 0
+  # min_replicas=1 keeps the GPU pod warm. With min=0, cold start on this
+  # image (cross-region ACR pull of the CUDA+SAM2 image, model load, CUDA
+  # init) exceeds KEDA's default 5-min scale-to-zero cooldown, so a freshly
+  # deployed revision gets ManuallyStopped before it ever becomes ready.
+  # Revisit once the ACR is colocated in eastus or the image is slimmed —
+  # at that point cold start should fit inside the cooldown window.
+  min_replicas = 1
   max_replicas = 1
   # Consumption-GPU-NC8as-T4 nodes are 8 vCPU / 56 GiB / 1x NVIDIA T4.
   # Container allocation must match the node sku on GPU workload profiles.
