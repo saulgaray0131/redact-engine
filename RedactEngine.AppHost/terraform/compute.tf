@@ -413,14 +413,20 @@ resource "azurerm_container_app" "inference" {
         failure_count_threshold = 3
       }
 
+      # Cold start on the GPU profile covers: cross-region ACR pull of a
+      # multi-GB CUDA image, SAM 2 + Grounding DINO model load, and CUDA
+      # context init. Observed at 5–10 minutes on min_replicas=0 starts.
+      # Budget = interval * failure_count_threshold = 30s * 40 = 20 min
+      # so ACA doesn't kill the pod mid-startup; startup_probe gates the
+      # other two probes, so they don't fire until uvicorn is live.
       startup_probe {
         transport = "HTTP"
         path      = "/health"
         port      = 8000
 
-        interval_seconds        = 10
-        timeout                 = 5
-        failure_count_threshold = 10
+        interval_seconds        = 30
+        timeout                 = 10
+        failure_count_threshold = 40
       }
     }
   }
