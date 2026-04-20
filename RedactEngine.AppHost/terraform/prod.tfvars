@@ -41,11 +41,11 @@ inference_config = {
   memory = "56Gi"
 }
 
-# Pre-warm schedule: 8am-6pm America/Chicago, Mon-Fri. Adjust if your
-# working hours differ. Outside this window the inference pod scales to 0.
+# Pre-warm schedule: noon-6pm America/Chicago, Mon-Fri. America/Chicago
+# observes DST automatically; don't hardcode CST/CDT offsets.
 inference_warm_schedule = {
   timezone = "America/Chicago"
-  start    = "0 8 * * 1-5"
+  start    = "0 12 * * 1-5"
   end      = "0 18 * * 1-5"
 }
 
