@@ -8,25 +8,32 @@ FastAPI service implementing a two-stage prompt-driven video redaction pipeline:
 Real mode runs both models; mock mode (INFERENCE_MODE=mock) bypasses model loading
 entirely and falls back to a simpler bounding-box redaction path, useful for CI or
 developing the rest of the system without the ML dependencies.
+
+/redact is asynchronous: it returns 202 Accepted immediately, processes in the
+background, uploads the result to blob storage, and POSTs a completion callback
+to the .NET API service. /detect remains synchronous.
 """
 
+import asyncio
 import base64
 import bisect
-import io
 import logging
 import os
+import queue
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from enum import Enum
 
 import cv2
+import httpx
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import StreamingResponse
 from PIL import Image
 from pydantic import BaseModel
 
@@ -51,8 +58,19 @@ SAM2_CHECKPOINT = os.getenv("SAM2_CHECKPOINT", "./checkpoints/sam2.1_hiera_tiny.
 SAM2_MAX_FRAMES = int(os.getenv("SAM2_MAX_FRAMES", "32"))
 # Shared secret for cross-environment calls from the worker. When set, every
 # request except /alive and /health must carry X-Inference-Key. Unset in local
-# dev so the service stays open for Aspire.
+# dev so the service stays open for Aspire. The same key is sent back on the
+# outbound completion callback to the API service.
 INFERENCE_SERVICE_KEY = os.getenv("INFERENCE_SERVICE_KEY")
+
+# Async-redact plumbing: blob storage for uploading the redacted MP4, plus the
+# API service's base URL for posting the completion callback. All three are
+# populated by Aspire (locally) or Terraform/ACA config (in prod).
+BLOB_STORAGE_CONNECTION = (
+    os.getenv("BLOB_STORAGE_CONNECTION")
+    or os.getenv("ConnectionStrings__BlobStorage")
+)
+BLOB_CONTAINER_NAME = os.getenv("BLOB_CONTAINER_NAME", "media")
+INFERENCE_CALLBACK_URL = os.getenv("INFERENCE_CALLBACK_URL")
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -66,6 +84,11 @@ async def lifespan(app: FastAPI):
     app.state.device = "cpu"
     app.state.sam2_device = "cpu"
     app.state.torch = None
+    # In-memory registry of /redact jobs currently in flight, keyed by job_id.
+    # Entries: {"status": "running"|"completed"|"failed", "started_at": float,
+    # "error": str | None}. Process-local; if the pod crashes mid-job the
+    # caller's pub/sub redelivery is the recovery path.
+    app.state.jobs = {}
 
     if INFERENCE_MODE == "real":
         import torch
@@ -183,6 +206,27 @@ class DetectResponse(BaseModel):
     previews: list[DetectionPreviewPayload] = []
 
 
+class RedactRequest(BaseModel):
+    job_id: str
+    video_url: str
+    original_filename: str
+    prompt: str
+    redaction_style: RedactionStyle = RedactionStyle.blur
+    confidence_threshold: float = 0.3
+
+
+class RedactAcceptedResponse(BaseModel):
+    job_id: str
+    status: str
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    started_at: float | None = None
+    error: str | None = None
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 
@@ -269,27 +313,47 @@ async def detect(
 # ── Redaction endpoint ────────────────────────────────────────────────────────
 
 
-@app.post("/redact")
-async def redact(
-    request: Request,
-    video: UploadFile = File(...),
-    prompt: str = Form(...),
-    redaction_style: RedactionStyle = Form(RedactionStyle.blur),
-    confidence_threshold: float = Form(0.3),
-):
-    """Detect on anchor frames, union detections, apply redaction to every frame."""
-    if not video.content_type or not video.content_type.startswith("video/"):
-        raise HTTPException(status_code=400, detail="File must be a video")
+@app.post("/redact", status_code=202, response_model=RedactAcceptedResponse)
+async def redact(request: Request, body: RedactRequest) -> RedactAcceptedResponse:
+    """
+    Accept a redaction job, start processing in the background, return 202.
 
-    video_bytes = await video.read()
-    redacted_bytes = _redact_video(
-        request.app, video_bytes, prompt, redaction_style, confidence_threshold
-    )
+    The caller (Worker) receives `job_id` + `status="accepted"` immediately.
+    Inference downloads the video from `video_url`, runs the pipeline, uploads
+    the result to blob storage, then POSTs a completion callback to the API
+    service at INFERENCE_CALLBACK_URL. Job state lives in-memory only; if the
+    pod restarts, the Worker's pub/sub redelivery re-runs the job from scratch.
+    """
+    jobs = request.app.state.jobs
+    existing = jobs.get(body.job_id)
+    if existing is not None:
+        logger.info(
+            "Redact job %s already tracked (status=%s), returning current state",
+            body.job_id, existing["status"],
+        )
+        return RedactAcceptedResponse(job_id=body.job_id, status=existing["status"])
 
-    return StreamingResponse(
-        io.BytesIO(redacted_bytes),
-        media_type="video/mp4",
-        headers={"Content-Disposition": "attachment; filename=redacted.mp4"},
+    jobs[body.job_id] = {
+        "status": "running",
+        "started_at": time.time(),
+        "error": None,
+    }
+    asyncio.create_task(_run_redact_job(request.app, body))
+    logger.info("Redact job %s accepted, processing in background", body.job_id)
+    return RedactAcceptedResponse(job_id=body.job_id, status="accepted")
+
+
+@app.get("/jobs/{job_id}", response_model=JobStatusResponse)
+def get_job_status(job_id: str, request: Request) -> JobStatusResponse:
+    """Debug/introspection: return the in-memory state of a redact job."""
+    entry = request.app.state.jobs.get(job_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Job not tracked")
+    return JobStatusResponse(
+        job_id=job_id,
+        status=entry["status"],
+        started_at=entry.get("started_at"),
+        error=entry.get("error"),
     )
 
 
@@ -304,32 +368,36 @@ def _normalize_prompt(prompt: str) -> str:
     return normalized
 
 
+def _pick_anchor_indices(frame_count: int, fps: float) -> list[int]:
+    """
+    Evenly-spaced anchor frame indices across a clip.
+
+    Count = min(MAX_ANCHORS, max(1, ceil(duration_s / ANCHOR_INTERVAL_SECONDS))).
+    """
+    if frame_count <= 0:
+        return []
+    duration = frame_count / fps
+    anchor_count = max(1, int(np.ceil(duration / ANCHOR_INTERVAL_SECONDS)))
+    anchor_count = min(anchor_count, MAX_ANCHORS, frame_count)
+    if anchor_count == 1:
+        return [0]
+    return [
+        int(round(i * (frame_count - 1) / (anchor_count - 1)))
+        for i in range(anchor_count)
+    ]
+
+
 def _extract_anchor_frames(video_path: str) -> tuple[float, list[tuple[int, np.ndarray]]]:
     """
     Pick anchor frames evenly spaced across the video.
 
-    Count = min(MAX_ANCHORS, max(1, ceil(duration_s / ANCHOR_INTERVAL_SECONDS))).
     Returns (fps, [(real_frame_index, bgr_frame), ...]).
     """
     cap = cv2.VideoCapture(video_path)
     try:
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        if total_frames <= 0:
-            return fps, []
-
-        duration = total_frames / fps
-        anchor_count = max(1, int(np.ceil(duration / ANCHOR_INTERVAL_SECONDS)))
-        anchor_count = min(anchor_count, MAX_ANCHORS, total_frames)
-
-        # Evenly space anchors; for anchor_count=1 use frame 0, else distribute across video.
-        if anchor_count == 1:
-            indices = [0]
-        else:
-            indices = [
-                int(round(i * (total_frames - 1) / (anchor_count - 1)))
-                for i in range(anchor_count)
-            ]
+        indices = _pick_anchor_indices(total_frames, fps)
 
         frames: list[tuple[int, np.ndarray]] = []
         for idx in indices:
@@ -341,6 +409,25 @@ def _extract_anchor_frames(video_path: str) -> tuple[float, list[tuple[int, np.n
         return fps, frames
     finally:
         cap.release()
+
+
+def _read_anchor_frames_from_dir(
+    frames_dir: str, frame_count: int, fps: float
+) -> list[tuple[int, np.ndarray]]:
+    """
+    Sample anchor frames directly from a pre-extracted JPEG directory.
+
+    Avoids a second ffmpeg/OpenCV decode pass when `_extract_all_frames` has
+    already dumped every frame to disk.
+    """
+    indices = _pick_anchor_indices(frame_count, fps)
+    frames: list[tuple[int, np.ndarray]] = []
+    for idx in indices:
+        path = os.path.join(frames_dir, f"{idx:05d}.jpg")
+        frame = cv2.imread(path)
+        if frame is not None:
+            frames.append((idx, frame))
+    return frames
 
 
 def _subsample_evenly(items: list, cap: int) -> list:
@@ -405,56 +492,79 @@ def _detect_objects(
     return _run_grounding_dino(app, frame, prompt, confidence_threshold)
 
 
-def _run_grounding_dino(
-    app: FastAPI, frame: np.ndarray, prompt: str, box_threshold: float
-) -> list[BoundingBox]:
-    """Run Grounding DINO on a single BGR frame, return boxes in xywh."""
+def _run_grounding_dino_batch(
+    app: FastAPI,
+    frames: list[np.ndarray],
+    prompt: str,
+    box_threshold: float,
+) -> list[list[BoundingBox]]:
+    """
+    Batched Grounding DINO. One forward pass over a list of BGR frames, returns
+    detections aligned 1:1 with the input list.
+    """
+    if not frames:
+        return []
+
     torch = app.state.torch
     processor = app.state.processor
     model = app.state.model
     device = app.state.device
 
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    image = Image.fromarray(rgb)
+    images = [Image.fromarray(cv2.cvtColor(f, cv2.COLOR_BGR2RGB)) for f in frames]
+    texts = [prompt] * len(images)
 
     # Inputs must live on the same device as the model weights, otherwise the
     # embedding layer errors with "Placeholder storage has not been allocated on
     # MPS device!" (or the CUDA equivalent). `.to(device)` on a BatchFeature
     # moves every contained tensor in one shot.
-    inputs = processor(images=image, text=prompt, return_tensors="pt").to(device)
+    inputs = processor(
+        images=images, text=texts, return_tensors="pt", padding=True
+    ).to(device)
     with torch.no_grad():
         outputs = model(**inputs)
 
     # post_process expects CPU tensors; target_sizes is a CPU tensor by construction.
-    target_sizes = torch.tensor([image.size[::-1]])  # (H, W)
-    results = processor.post_process_grounded_object_detection(
+    target_sizes = torch.tensor([img.size[::-1] for img in images])
+    batched = processor.post_process_grounded_object_detection(
         outputs,
         inputs.input_ids,
         box_threshold=box_threshold,
         text_threshold=TEXT_THRESHOLD,
         target_sizes=target_sizes,
-    )[0]
+    )
 
-    boxes: list[BoundingBox] = []
-    for box, score, label in zip(results["boxes"], results["scores"], results["labels"]):
-        x1, y1, x2, y2 = box.tolist()
-        width = max(0.0, x2 - x1)
-        height = max(0.0, y2 - y1)
-        if width <= 0 or height <= 0:
-            continue
-        label_str = label if isinstance(label, str) else str(label)
-        boxes.append(
-            BoundingBox(
-                x=float(x1),
-                y=float(y1),
-                width=float(width),
-                height=float(height),
-                confidence=round(float(score), 3),
-                label=label_str or prompt,
+    per_frame: list[list[BoundingBox]] = []
+    for results in batched:
+        boxes: list[BoundingBox] = []
+        for box, score, label in zip(
+            results["boxes"], results["scores"], results["labels"]
+        ):
+            x1, y1, x2, y2 = box.tolist()
+            width = max(0.0, x2 - x1)
+            height = max(0.0, y2 - y1)
+            if width <= 0 or height <= 0:
+                continue
+            label_str = label if isinstance(label, str) else str(label)
+            boxes.append(
+                BoundingBox(
+                    x=float(x1),
+                    y=float(y1),
+                    width=float(width),
+                    height=float(height),
+                    confidence=round(float(score), 3),
+                    label=label_str or prompt,
+                )
             )
-        )
+        per_frame.append(boxes)
+    return per_frame
 
-    return boxes
+
+def _run_grounding_dino(
+    app: FastAPI, frame: np.ndarray, prompt: str, box_threshold: float
+) -> list[BoundingBox]:
+    """Run Grounding DINO on a single BGR frame, return boxes in xywh."""
+    batched = _run_grounding_dino_batch(app, [frame], prompt, box_threshold)
+    return batched[0] if batched else []
 
 
 def _mock_detect(frame: np.ndarray, prompt: str) -> list[BoundingBox]:
@@ -773,15 +883,24 @@ def _redact_video_sam2(
 
         normalized_prompt = _normalize_prompt(prompt)
 
-        # Step 1: seed detections on anchor frames via Grounding DINO.
-        _, anchors = _extract_anchor_frames(tmp_in)
-        seeds: list[tuple[int, BoundingBox]] = []  # (frame_index, box)
-        for frame_idx, frame in anchors:
-            detections = _run_grounding_dino(
-                app, frame, normalized_prompt, confidence_threshold
-            )
-            for det in detections:
-                seeds.append((frame_idx, det))
+        # Step 1: seed detections on anchor frames via Grounding DINO. Sample
+        # anchors directly from the JPEGs _extract_all_frames just wrote, so we
+        # don't pay a second ffmpeg/OpenCV decode of the same video. Run DINO
+        # once on the full anchor batch — one forward pass beats N sequential
+        # ones, especially on GPU where launch overhead dominates for small
+        # tiny-DINO inputs.
+        anchors = _read_anchor_frames_from_dir(frames_dir, frame_count, fps)
+        anchor_detections = _run_grounding_dino_batch(
+            app,
+            [frame for _, frame in anchors],
+            normalized_prompt,
+            confidence_threshold,
+        )
+        seeds: list[tuple[int, BoundingBox]] = [
+            (frame_idx, det)
+            for (frame_idx, _frame), detections in zip(anchors, anchor_detections)
+            for det in detections
+        ]
 
         logger.info(
             "SAM2 redact: %d frames, %d anchors, %d seed detections, style=%s",
@@ -917,15 +1036,43 @@ def _redact_video_sam2(
             stderr=subprocess.PIPE,
         )
 
-        for frame_idx in range(frame_count):
-            frame_path = os.path.join(frames_dir, f"{frame_idx:05d}.jpg")
-            frame = cv2.imread(frame_path)
-            if frame is None:
-                continue
-            mask = masks_by_frame.get(frame_idx)
-            if mask is not None:
-                frame = _apply_redaction_mask(frame, mask, style)
-            process.stdin.write(frame.tobytes())
+        # Prefetch JPEG decodes on a producer thread so decode overlaps with
+        # compositing + the blocking stdin.write into ffmpeg. Bounded queue
+        # caps in-flight memory; cv2.imread releases the GIL so the threads
+        # actually overlap.
+        frame_queue: queue.Queue = queue.Queue(maxsize=4)
+        sentinel = object()
+        producer_err: list[BaseException] = []
+
+        def _produce_frames() -> None:
+            try:
+                for idx in range(frame_count):
+                    frame_queue.put(
+                        (idx, cv2.imread(os.path.join(frames_dir, f"{idx:05d}.jpg")))
+                    )
+            except BaseException as exc:  # noqa: BLE001 — propagate to main
+                producer_err.append(exc)
+            finally:
+                frame_queue.put(sentinel)
+
+        producer = threading.Thread(target=_produce_frames, daemon=True)
+        producer.start()
+        try:
+            while True:
+                item = frame_queue.get()
+                if item is sentinel:
+                    break
+                frame_idx, frame = item
+                if frame is None:
+                    continue
+                mask = masks_by_frame.get(frame_idx)
+                if mask is not None:
+                    frame = _apply_redaction_mask(frame, mask, style)
+                process.stdin.write(frame.tobytes())
+        finally:
+            producer.join(timeout=5)
+        if producer_err:
+            raise producer_err[0]
 
         # Don't close stdin manually — communicate() flushes and closes it itself,
         # and an explicit close here would cause `ValueError: flush of closed file`.
@@ -969,3 +1116,179 @@ def _nullcontext():
     """Tiny replacement for contextlib.nullcontext to avoid another import."""
     from contextlib import nullcontext
     return nullcontext()
+
+
+# ── Async /redact background job ──────────────────────────────────────────────
+
+
+async def _run_redact_job(app: FastAPI, body: RedactRequest) -> None:
+    """
+    Background coroutine that owns the full lifecycle of one /redact job:
+    download the input video, run the pipeline in a worker thread, upload the
+    result to blob storage, and POST a completion callback to the API service.
+
+    Failures at every step are reported to the API via the same callback with
+    status="failed" so the RedactionJob gets marked Failed rather than stuck in
+    Redacting. The registry entry is cleared on terminal state.
+    """
+    jobs = app.state.jobs
+    job_id = body.job_id
+    started = time.time()
+
+    try:
+        logger.info("Redact job %s: downloading video from %s", job_id, body.video_url)
+        video_bytes = await _download_video(body.video_url)
+
+        logger.info(
+            "Redact job %s: processing (style=%s, threshold=%.2f, %d bytes)",
+            job_id, body.redaction_style.value, body.confidence_threshold, len(video_bytes),
+        )
+        redacted_bytes = await asyncio.to_thread(
+            _redact_video,
+            app,
+            video_bytes,
+            body.prompt,
+            body.redaction_style,
+            body.confidence_threshold,
+        )
+
+        remote_path = (
+            f"{datetime.now(timezone.utc):%Y%m%d}/{job_id}/"
+            f"redacted_{body.original_filename}"
+        )
+        logger.info(
+            "Redact job %s: uploading result to blob at %s", job_id, remote_path,
+        )
+        blob_url = await asyncio.to_thread(
+            _upload_bytes_to_blob, redacted_bytes, remote_path, "video/mp4",
+        )
+
+        elapsed_ms = int((time.time() - started) * 1000)
+        await _post_completion_callback(
+            job_id,
+            {
+                "status": "completed",
+                "redactedVideoUrl": blob_url,
+                "metrics": {
+                    "totalProcessingTimeMs": elapsed_ms,
+                    "redactionTimeMs": elapsed_ms,
+                },
+            },
+        )
+        jobs[job_id] = {
+            "status": "completed",
+            "started_at": started,
+            "error": None,
+        }
+        logger.info("Redact job %s completed in %dms → %s", job_id, elapsed_ms, blob_url)
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+        logger.exception("Redact job %s failed", job_id)
+        jobs[job_id] = {
+            "status": "failed",
+            "started_at": started,
+            "error": error,
+        }
+        try:
+            await _post_completion_callback(
+                job_id,
+                {"status": "failed", "error": error[:2000]},
+            )
+        except Exception:
+            logger.exception(
+                "Redact job %s: completion callback also failed", job_id,
+            )
+    finally:
+        # Keep the final state briefly for /jobs/{id} introspection, then drop.
+        # Simpler than a TTL sweeper; a dumb sleep is fine at PoC scale.
+        async def _evict_later() -> None:
+            await asyncio.sleep(300)
+            jobs.pop(job_id, None)
+        asyncio.create_task(_evict_later())
+
+
+async def _download_video(video_url: str) -> bytes:
+    """GET the input video. Follows redirects; raises on non-2xx."""
+    async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+        response = await client.get(video_url)
+        response.raise_for_status()
+        return response.content
+
+
+def _upload_bytes_to_blob(data: bytes, remote_path: str, content_type: str) -> str:
+    """
+    Sync blob upload — wrapped in asyncio.to_thread by the caller.
+
+    Mirrors AzureBlobService.UploadAsync's behavior: create-if-not-exists with
+    public read access on the container, upload with explicit content type,
+    return the blob URL.
+    """
+    if not BLOB_STORAGE_CONNECTION:
+        raise RuntimeError(
+            "BLOB_STORAGE_CONNECTION is not set — cannot upload redacted video"
+        )
+
+    # Import locally so dev-without-azure-storage still boots for mock work.
+    from azure.storage.blob import BlobServiceClient, ContentSettings, PublicAccess
+
+    service = BlobServiceClient.from_connection_string(BLOB_STORAGE_CONNECTION)
+    container = service.get_container_client(BLOB_CONTAINER_NAME)
+    try:
+        container.create_container(public_access=PublicAccess.Blob)
+    except Exception:
+        # Already exists — the SDK doesn't expose a clean "create_if_not_exists"
+        # on the container client, and we don't want the initial 409 to be fatal.
+        pass
+
+    blob = container.get_blob_client(remote_path)
+    blob.upload_blob(
+        data,
+        overwrite=True,
+        content_settings=ContentSettings(content_type=content_type),
+    )
+    return blob.url
+
+
+async def _post_completion_callback(job_id: str, payload: dict) -> None:
+    """
+    POST the completion callback to the API service with bounded retries.
+
+    Exponential backoff (1s, 3s, 9s) across 3 attempts. The API callback is
+    idempotent on its side (already-terminal jobs return 200 with current
+    state), so duplicate delivery from a retry is safe.
+    """
+    if not INFERENCE_CALLBACK_URL:
+        logger.error(
+            "INFERENCE_CALLBACK_URL not set; dropping completion for job %s", job_id,
+        )
+        return
+
+    url = f"{INFERENCE_CALLBACK_URL.rstrip('/')}/internal/redaction-jobs/{job_id}/complete"
+    headers = {"Content-Type": "application/json"}
+    if INFERENCE_SERVICE_KEY:
+        headers["X-Inference-Key"] = INFERENCE_SERVICE_KEY
+
+    delays = [1.0, 3.0, 9.0]
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+        for attempt, delay in enumerate(delays):
+            try:
+                response = await client.post(url, json=payload, headers=headers)
+                if 200 <= response.status_code < 300:
+                    logger.info(
+                        "Callback for job %s succeeded on attempt %d (status=%d)",
+                        job_id, attempt + 1, response.status_code,
+                    )
+                    return
+                logger.warning(
+                    "Callback for job %s returned %d on attempt %d: %s",
+                    job_id, response.status_code, attempt + 1,
+                    response.text[:200],
+                )
+            except httpx.HTTPError as exc:
+                logger.warning(
+                    "Callback for job %s failed on attempt %d: %s",
+                    job_id, attempt + 1, exc,
+                )
+            if attempt < len(delays) - 1:
+                await asyncio.sleep(delay)
+        logger.error("Callback for job %s exhausted all retries", job_id)

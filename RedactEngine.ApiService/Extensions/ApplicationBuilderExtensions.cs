@@ -20,7 +20,14 @@ public static class ApplicationBuilderExtensions
 
         if (app.Environment.IsEnvironment("Local"))
         {
-            app.UseHttpsRedirection();
+            // Skip HTTPS redirect for the inference service's callback path.
+            // Python's httpx doesn't trust the ASP.NET dev cert, so bouncing
+            // loopback POSTs to https: would break the callback. In prod
+            // UseHttpsRedirection is never registered, so this branch is a
+            // dev-only concern.
+            app.UseWhen(
+                ctx => !ctx.Request.Path.StartsWithSegments("/internal"),
+                branch => branch.UseHttpsRedirection());
         }
 
         app.UseCloudEvents();

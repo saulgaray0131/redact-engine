@@ -20,12 +20,11 @@ builder.Services.AddHttpClient("InferenceService", client =>
     var inferenceUrl = builder.Configuration.GetConnectionString("InferenceService")
                       ?? "http://localhost:8000";
     client.BaseAddress = new Uri(inferenceUrl);
-    // SAM 2 video tracking is O(frames × memory_bank_size) per-frame. On CPU
-    // (no GPU available) a multi-second clip can take 30-60 minutes; on MPS or
-    // CUDA it fits within minutes. Size this for the worst case so long-running
-    // jobs aren't killed mid-propagation, which leaves the Python process
-    // chewing CPU after the worker has already given up.
-    client.Timeout = TimeSpan.FromHours(1);
+    // /redact is now async: this client only submits detect requests and
+    // fire-and-forget POSTs to /redact. Detect still holds the connection for
+    // the full DINO pass (tens of seconds), so allow up to a minute to absorb
+    // that plus any cross-region ingress hop; /redact itself returns in ms.
+    client.Timeout = TimeSpan.FromMinutes(1);
 
     // In prod the inference service lives in a separate ACA environment (eastus)
     // and is reached over a public FQDN, so gate access with a shared secret.

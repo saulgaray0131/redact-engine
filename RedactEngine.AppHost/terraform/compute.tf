@@ -78,6 +78,14 @@ resource "azurerm_container_app" "api" {
     value = azurerm_cognitive_account.openai.primary_access_key
   }
 
+  # Shared secret the inference service presents on the /internal/* callback
+  # path when it posts redaction-job completion. Same value the Worker sends
+  # outbound to /detect and /redact.
+  secret {
+    name  = "inference-key"
+    value = var.inference_service_key
+  }
+
   identity {
     type         = "UserAssigned"
     identity_ids = [azurerm_user_assigned_identity.app_identity.id]
@@ -112,6 +120,14 @@ resource "azurerm_container_app" "api" {
       env {
         name  = "ConnectionStrings__keyvault"
         value = azurerm_key_vault.kv.vault_uri
+      }
+
+      # Validated by InternalInferenceCallbackController on the inference → API
+      # completion callback. Must match the value on both the Worker and the
+      # inference service.
+      env {
+        name        = "INFERENCE_SERVICE_KEY"
+        secret_name = "inference-key"
       }
 
       # --- Observability ---
@@ -367,6 +383,14 @@ resource "azurerm_container_app" "inference" {
     value = var.inference_service_key
   }
 
+  # Storage account key is required so the inference service can upload the
+  # redacted MP4 directly to blob storage (async /redact flow). Pulled from
+  # the same storage account the API/Worker write to.
+  secret {
+    name  = "blob-conn"
+    value = azurerm_storage_account.storage.primary_blob_connection_string
+  }
+
   template {
     min_replicas = var.inference_config.min_replicas
     max_replicas = var.inference_config.max_replicas
@@ -403,6 +427,26 @@ resource "azurerm_container_app" "inference" {
       env {
         name        = "INFERENCE_SERVICE_KEY"
         secret_name = "inference-key"
+      }
+
+      # Async /redact plumbing: upload destination + callback target. The
+      # inference service pulls the input video from the URL the Worker
+      # forwards (already a public blob URL), processes, uploads the result
+      # back into the `media` container, then POSTs to the API's internal
+      # callback endpoint which applies the Completed/Failed transition.
+      env {
+        name        = "BLOB_STORAGE_CONNECTION"
+        secret_name = "blob-conn"
+      }
+
+      env {
+        name  = "BLOB_CONTAINER_NAME"
+        value = "media"
+      }
+
+      env {
+        name  = "INFERENCE_CALLBACK_URL"
+        value = "https://${azurerm_container_app.api.ingress[0].fqdn}"
       }
 
       env {

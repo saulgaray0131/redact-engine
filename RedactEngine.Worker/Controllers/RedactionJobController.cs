@@ -10,6 +10,7 @@ using RedactEngine.Shared.PubSub;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 
 namespace RedactEngine.Worker.Controllers;
@@ -160,33 +161,20 @@ public sealed class RedactionJobController(
             return Ok();
         }
 
-        var stopwatch = Stopwatch.StartNew();
-
+        // Fire-and-forget to the Python service: POST job details, expect 202
+        // Accepted. The inference service runs the pipeline in the background,
+        // uploads the result to blob, and POSTs back to the API's internal
+        // callback endpoint which drives the Completed/Failed transition.
         try
         {
-            var redactedVideoBytes = await CallRedactAsync(message, cancellationToken);
-
-            // Upload redacted video to blob storage
-            using var resultStream = new MemoryStream(redactedVideoBytes);
-            var redactedFileName = $"redacted_{message.OriginalFileName}";
-            var redactedUrl = await blobService.UploadAsync(resultStream, redactedFileName, "video/mp4", cancellationToken);
-
-            stopwatch.Stop();
-
-            var metrics = new ProcessingMetrics(
-                totalProcessingTimeMs: stopwatch.ElapsedMilliseconds,
-                framesProcessed: job.DetectionSummary?.SampledFrameCount ?? 0,
-                objectsDetected: job.DetectionSummary?.TotalDetections ?? 0,
-                redactionTimeMs: stopwatch.ElapsedMilliseconds);
-
-            job.MarkCompleted(redactedUrl, metrics);
-            await db.SaveChangesAsync(cancellationToken);
-
-            logger.LogInformation("Redaction job {JobId} completed. Result: {RedactedUrl}", message.JobId, redactedUrl);
+            await SubmitRedactAsync(message, cancellationToken);
+            logger.LogInformation(
+                "Redaction job {JobId} submitted to inference; awaiting callback",
+                message.JobId);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Redaction job {JobId} failed", message.JobId);
+            logger.LogError(ex, "Submitting redaction job {JobId} to inference failed", message.JobId);
             job.MarkFailed(ex.Message.Length > 2000 ? ex.Message[..2000] : ex.Message);
             await db.SaveChangesAsync(cancellationToken);
         }
@@ -257,28 +245,23 @@ public sealed class RedactionJobController(
             ?? throw new InvalidOperationException("Failed to deserialize detection response");
     }
 
-    private async Task<byte[]> CallRedactAsync(
+    private async Task SubmitRedactAsync(
         RedactionExportRequestedMessage message,
         CancellationToken cancellationToken)
     {
         var client = httpClientFactory.CreateClient("InferenceService");
 
-        // Download original video from blob storage
-        using var blobClient = new HttpClient();
-        var videoBytes = await blobClient.GetByteArrayAsync(message.OriginalVideoUrl, cancellationToken);
+        var payload = new
+        {
+            job_id = message.JobId,
+            video_url = message.OriginalVideoUrl,
+            original_filename = message.OriginalFileName,
+            prompt = message.DetectionPrompt,
+            redaction_style = message.RedactionStyle.ToLowerInvariant(),
+            confidence_threshold = message.ConfidenceThreshold,
+        };
 
-        // Build multipart form for inference service
-        using var content = new MultipartFormDataContent();
-        var videoContent = new ByteArrayContent(videoBytes);
-        videoContent.Headers.ContentType = new MediaTypeHeaderValue("video/mp4");
-        content.Add(videoContent, "video", message.OriginalFileName);
-        content.Add(new StringContent(message.DetectionPrompt), "prompt");
-        content.Add(new StringContent(message.RedactionStyle), "redaction_style");
-        content.Add(new StringContent(message.ConfidenceThreshold.ToString()), "confidence_threshold");
-
-        var response = await client.PostAsync("/redact", content, cancellationToken);
+        var response = await client.PostAsJsonAsync("/redact", payload, cancellationToken);
         response.EnsureSuccessStatusCode();
-
-        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
     }
 }
