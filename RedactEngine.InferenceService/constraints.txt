@@ -4,3 +4,4 @@
 # accelerate, etc.) from "upgrading" torch past the cu118 wheel we installed
 # in the preceding step.
 torch==2.6.0+cu118
+torchvision==0.21.0+cu118

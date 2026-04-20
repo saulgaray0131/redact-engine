@@ -14,13 +14,17 @@ COPY RedactEngine.InferenceService/constraints.txt .
 # supporting CUDA 11.8+. The -c constraints.txt pin prevents transitive
 # dependencies (sam-2, transformers, accelerate) from upgrading torch
 # past the cu118 wheel during the requirements.txt install pass.
-RUN pip install --no-cache-dir torch==2.6.0+cu118 \
+RUN pip install --no-cache-dir \
+      torch==2.6.0+cu118 \
+      torchvision==0.21.0+cu118 \
       --index-url https://download.pytorch.org/whl/cu118 && \
     pip install --no-cache-dir -r requirements.txt -c constraints.txt && \
-    python -c "import torch; \
+    python -c "import torch, torchvision; \
 assert torch.version.cuda == '11.8', \
   f'expected torch CUDA 11.8, got {torch.version.cuda} (torch={torch.__version__})'; \
-print('torch', torch.__version__, 'cuda', torch.version.cuda)"
+assert '+cu118' in torchvision.__version__, \
+  f'expected torchvision +cu118 build, got {torchvision.__version__}'; \
+print('torch', torch.__version__, 'torchvision', torchvision.__version__)"
 
 ENV HF_HOME=/app/.cache/huggingface
 RUN python -c "from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection; \
