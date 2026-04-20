@@ -71,6 +71,14 @@ async def lifespan(app: FastAPI):
         import torch
         from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
 
+        logger.info(
+            "torch=%s cuda_build=%s cuda_available=%s device_count=%d",
+            torch.__version__,
+            torch.version.cuda,
+            torch.cuda.is_available(),
+            torch.cuda.device_count() if torch.cuda.is_available() else 0,
+        )
+
         device = _select_device(torch)
         sam2_device = _select_sam2_device(torch)
         app.state.device = device

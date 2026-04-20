@@ -10,10 +10,17 @@ COPY RedactEngine.InferenceService/requirements.txt .
 # Install torch built against CUDA 11.8. ACA's serverless GPU nodes report
 # driver CUDA 12.4.0 but the torch 2.6 cu124 wheels fail initialization
 # there ("NVIDIA driver too old"). cu118 wheels work with any driver
-# supporting CUDA 11.8+, which every reasonable modern driver does —
-# safest broadly-compatible choice for the T4 profile.
-RUN pip install --no-cache-dir torch==2.6.0 --index-url https://download.pytorch.org/whl/cu118 && \
-    pip install --no-cache-dir -r requirements.txt
+# supporting CUDA 11.8+. The +cu118 local version tag makes the installed
+# wheel non-interchangeable with PyPI's default torch==2.6.0 (which is
+# +cu124 on Linux), so the next `pip install -r requirements.txt` step
+# cannot silently replace it while still satisfying torch>=2.6.
+RUN pip install --no-cache-dir torch==2.6.0+cu118 \
+      --index-url https://download.pytorch.org/whl/cu118 && \
+    pip install --no-cache-dir -r requirements.txt && \
+    python -c "import torch; \
+assert torch.version.cuda == '11.8', \
+  f'expected torch CUDA 11.8, got {torch.version.cuda} (torch={torch.__version__})'; \
+print('torch', torch.__version__, 'cuda', torch.version.cuda)"
 
 ENV HF_HOME=/app/.cache/huggingface
 RUN python -c "from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection; \
