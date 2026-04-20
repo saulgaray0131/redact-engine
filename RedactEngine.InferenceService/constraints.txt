@@ -1,0 +1,6 @@
+# pip constraints used during the Dockerfile's `pip install -r requirements.txt`
+# step. Unlike requirements, constraints only cap versions — they don't force
+# installs. This prevents transitive dependencies (sam-2, transformers,
+# accelerate, etc.) from "upgrading" torch past the cu118 wheel we installed
+# in the preceding step.
+torch==2.6.0+cu118
