@@ -371,6 +371,24 @@ resource "azurerm_container_app" "inference" {
     min_replicas = var.inference_config.min_replicas
     max_replicas = var.inference_config.max_replicas
 
+    # KEDA cron scaler: hold 1 replica during var.inference_warm_schedule
+    # (weekday business hours by default) so the pod is already warm when
+    # users are working. Outside the window the rule emits 0 and the
+    # container scales down to var.inference_config.min_replicas.
+    #
+    # Note: off-hours requests still hit the multi-minute cold start, so
+    # this is only a win if off-hours usage is tolerable to fail/queue.
+    custom_scale_rule {
+      name             = "weekday-warm"
+      custom_rule_type = "cron"
+      metadata = {
+        timezone        = var.inference_warm_schedule.timezone
+        start           = var.inference_warm_schedule.start
+        end             = var.inference_warm_schedule.end
+        desiredReplicas = "1"
+      }
+    }
+
     container {
       name   = "inference-service"
       image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
