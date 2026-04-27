@@ -92,20 +92,6 @@ variable "inference_service_key" {
   default     = ""
 }
 
-variable "inference_warm_schedule" {
-  type = object({
-    timezone = string
-    start    = string
-    end      = string
-  })
-  description = "KEDA cron scale rule for the inference service. Between `start` and `end` (in `timezone`), the service holds 1 replica; outside, it scales to 0. Cron is standard 5-field (minute hour dom month dow)."
-  default = {
-    timezone = "America/Chicago"
-    start    = "0 8 * * 1-5"
-    end      = "0 18 * * 1-5"
-  }
-}
-
 # --- Security Variables ---
 variable "admin_object_id" {
   type        = string

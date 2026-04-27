@@ -27,26 +27,12 @@ worker_config = {
 }
 
 inference_config = {
-  # Base is min=0; a KEDA cron rule (see inference_warm_schedule) holds
-  # min=1 during business hours so the pod is pre-warmed when users are
-  # working, and sleeps overnight/weekends. Off-hours requests will hit
-  # the 5-10 minute cold start and likely fail until the ACR is colocated
-  # in eastus and the image is slimmed enough to fit inside KEDA's
-  # 5-minute scale-to-zero cooldown.
   min_replicas = 0
   max_replicas = 1
   # Consumption-GPU-NC8as-T4 nodes are 8 vCPU / 56 GiB / 1x NVIDIA T4.
   # Container allocation must match the node sku on GPU workload profiles.
   cpu    = 8
   memory = "56Gi"
-}
-
-# Pre-warm schedule: noon-6pm America/Chicago, Mon-Fri. America/Chicago
-# observes DST automatically; don't hardcode CST/CDT offsets.
-inference_warm_schedule = {
-  timezone = "America/Chicago"
-  start    = "0 12 * * 1-5"
-  end      = "0 18 * * 1-5"
 }
 
 # Inference service lives in its own ACA env in a GPU-supported region.
