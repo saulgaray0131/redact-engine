@@ -1,0 +1,22 @@
+# Eval-only dependencies. Install into a separate venv from the inference
+# service so we don't accidentally drag torch/sam2 into the eval environment.
+#
+#   python -m venv .venv-eval && source .venv-eval/bin/activate
+#   pip install -r requirements-eval.txt
+
+# HTTP client + progress bar
+httpx==0.27.2
+tqdm==4.66.5
+
+# Image / video I/O. opencv-python-headless avoids pulling Qt on servers.
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+Pillow==10.4.0
+
+# LVIS detection metrics (mAP / mAR over 1,203 categories).
+# Pulls pycocotools as a transitive dep.
+lvis==0.5.3
+
+# Ref-DAVIS17 J & F. The package on PyPI ships the evaluator class plus the
+# Ref-DAVIS17 expression splits.
+davis2017-evaluation==0.1.0
