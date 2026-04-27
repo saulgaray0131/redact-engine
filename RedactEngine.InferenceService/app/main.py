@@ -227,6 +227,24 @@ class JobStatusResponse(BaseModel):
     error: str | None = None
 
 
+class TrackedFrame(BaseModel):
+    """One frame's union-of-objects mask for a /track response."""
+    frame_index: int
+    # PNG-encoded mask, base64'd. 255 where the prompt's object is present,
+    # 0 elsewhere. Frames absent from the response should be treated as
+    # all-zero of shape (height, width).
+    png_base64: str
+
+
+class TrackResponse(BaseModel):
+    job_id: str
+    prompt: str
+    frame_count: int
+    width: int
+    height: int
+    masks: list[TrackedFrame]
+
+
 # ── Health ────────────────────────────────────────────────────────────────────
 
 
@@ -354,6 +372,70 @@ def get_job_status(job_id: str, request: Request) -> JobStatusResponse:
         status=entry["status"],
         started_at=entry.get("started_at"),
         error=entry.get("error"),
+    )
+
+
+# ── Tracking endpoint ────────────────────────────────────────────────────────
+
+
+@app.post("/track", response_model=TrackResponse)
+async def track(
+    request: Request,
+    video: UploadFile = File(...),
+    prompt: str = Form(...),
+    confidence_threshold: float = Form(0.3),
+):
+    """
+    Synchronously run DINO + SAM 2 and return per-frame binary masks.
+
+    Mirrors /detect's I/O shape (multipart video + prompt) but returns the
+    same per-pixel masks that /redact composites a blur/pixelate/fill under.
+    Intended for offline evaluation (Ref-DAVIS17 J & F) that needs pixel-
+    level metrics. Production redaction flow should keep using /redact.
+    """
+    if INFERENCE_MODE == "mock":
+        raise HTTPException(
+            status_code=501,
+            detail="/track requires INFERENCE_MODE=real (SAM 2 not loaded in mock mode)",
+        )
+    if request.app.state.sam2_predictor is None:
+        raise HTTPException(status_code=503, detail="SAM 2 still loading")
+    if not video.content_type or not video.content_type.startswith("video/"):
+        raise HTTPException(status_code=400, detail="File must be a video")
+
+    video_bytes = await video.read()
+
+    # SAM 2 propagation is blocking; offload so the event loop stays free.
+    width, height, frame_count, _fps, masks_by_frame = await asyncio.to_thread(
+        _track_video_sam2,
+        request.app,
+        video_bytes,
+        prompt,
+        confidence_threshold,
+    )
+
+    masks_payload: list[TrackedFrame] = []
+    for frame_idx, mask in sorted(masks_by_frame.items()):
+        # cv2.imencode wants uint8 0/255.
+        mask_u8 = (mask.astype(np.uint8)) * 255
+        ok, buf = cv2.imencode(".png", mask_u8)
+        if not ok:
+            logger.warning("Failed to PNG-encode mask for frame %d", frame_idx)
+            continue
+        masks_payload.append(
+            TrackedFrame(
+                frame_index=frame_idx,
+                png_base64=base64.b64encode(buf.tobytes()).decode("ascii"),
+            )
+        )
+
+    return TrackResponse(
+        job_id=str(uuid.uuid4()),
+        prompt=prompt,
+        frame_count=frame_count,
+        width=width,
+        height=height,
+        masks=masks_payload,
     )
 
 
@@ -1087,6 +1169,146 @@ def _redact_video_sam2(
         if process is not None and process.poll() is None:
             process.kill()
         # Best-effort cleanup of the temp working directory.
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def _track_video_sam2(
+    app: FastAPI,
+    video_bytes: bytes,
+    prompt: str,
+    confidence_threshold: float,
+) -> tuple[int, int, int, float, dict[int, np.ndarray]]:
+    """
+    Run the DINO + SAM 2 mask-generation pipeline and stop. No compositing,
+    no ffmpeg re-encode, no blob upload — just per-frame masks back to the
+    caller. Used by /track for evaluation pipelines.
+
+    Returns (width, height, frame_count, fps, masks_by_frame). The masks
+    dict only contains entries for frames where SAM 2 produced a non-empty
+    mask; absent frames should be treated as all-zero of shape (height, width).
+
+    NOTE: this duplicates the first ~150 lines of _redact_video_sam2 by
+    design — keeping /redact's working code completely untouched is worth
+    a bit of parallel maintenance. If a fix lands in one path (dtype, dim
+    mismatch, SAM 2 config, etc.), apply it to the other.
+    """
+    torch = app.state.torch
+    predictor = app.state.sam2_predictor
+    sam2_device = app.state.sam2_device
+
+    work_dir = tempfile.mkdtemp(prefix="track_sam2_")
+    tmp_in = os.path.join(work_dir, "input.mp4")
+    frames_dir = os.path.join(work_dir, "frames")
+
+    try:
+        with open(tmp_in, "wb") as f:
+            f.write(video_bytes)
+
+        fps, width, height, frame_count = _extract_all_frames(tmp_in, frames_dir)
+        if frame_count == 0:
+            raise HTTPException(status_code=400, detail="Could not extract frames from video")
+
+        normalized_prompt = _normalize_prompt(prompt)
+
+        anchors = _read_anchor_frames_from_dir(frames_dir, frame_count, fps)
+        anchor_detections = _run_grounding_dino_batch(
+            app,
+            [frame for _, frame in anchors],
+            normalized_prompt,
+            confidence_threshold,
+        )
+        seeds: list[tuple[int, BoundingBox]] = [
+            (frame_idx, det)
+            for (frame_idx, _frame), detections in zip(anchors, anchor_detections)
+            for det in detections
+        ]
+
+        logger.info(
+            "Track: %d frames, %d anchors, %d seed detections",
+            frame_count, len(anchors), len(seeds),
+        )
+
+        if not seeds:
+            return width, height, frame_count, fps, {}
+
+        if 0 < SAM2_MAX_FRAMES < frame_count:
+            if SAM2_MAX_FRAMES > 1:
+                step = (frame_count - 1) / (SAM2_MAX_FRAMES - 1)
+                sampled_orig = sorted({
+                    int(round(i * step)) for i in range(SAM2_MAX_FRAMES)
+                })
+            else:
+                sampled_orig = [0]
+            sampled_dir = os.path.join(work_dir, "sampled")
+            os.makedirs(sampled_dir, exist_ok=True)
+            for s_idx, orig_idx in enumerate(sampled_orig):
+                src = os.path.join(frames_dir, f"{orig_idx:05d}.jpg")
+                dst = os.path.join(sampled_dir, f"{s_idx:05d}.jpg")
+                try:
+                    os.link(src, dst)
+                except OSError:
+                    shutil.copy(src, dst)
+            frames_to_use_dir = sampled_dir
+            logger.info(
+                "Track subsample: %d/%d frames (cap=%d)",
+                len(sampled_orig), frame_count, SAM2_MAX_FRAMES,
+            )
+        else:
+            sampled_orig = list(range(frame_count))
+            frames_to_use_dir = frames_dir
+
+        def nearest_sampled_idx(orig_idx: int) -> int:
+            i = bisect.bisect_left(sampled_orig, orig_idx)
+            if i == 0:
+                return 0
+            if i >= len(sampled_orig):
+                return len(sampled_orig) - 1
+            before = sampled_orig[i - 1]
+            after = sampled_orig[i]
+            return i if (after - orig_idx) < (orig_idx - before) else i - 1
+
+        autocast_ctx = (
+            torch.autocast(device_type=sam2_device, dtype=torch.bfloat16)
+            if sam2_device in ("cuda", "cpu")
+            else _nullcontext()
+        )
+        masks_by_sampled: dict[int, np.ndarray] = {}
+        with torch.inference_mode(), autocast_ctx:
+            inference_state = predictor.init_state(video_path=frames_to_use_dir)
+
+            for obj_id, (orig_frame_idx, box) in enumerate(seeds):
+                x1 = float(box.x)
+                y1 = float(box.y)
+                x2 = float(box.x + box.width)
+                y2 = float(box.y + box.height)
+                predictor.add_new_points_or_box(
+                    inference_state=inference_state,
+                    frame_idx=nearest_sampled_idx(orig_frame_idx),
+                    obj_id=obj_id,
+                    box=np.array([x1, y1, x2, y2], dtype=np.float32),
+                )
+
+            for s_idx, _obj_ids, mask_logits in predictor.propagate_in_video(
+                inference_state
+            ):
+                bool_masks = (mask_logits > 0.0).squeeze(1).cpu().numpy()
+                union = np.any(bool_masks, axis=0) if bool_masks.size else None
+                if union is not None and union.any():
+                    masks_by_sampled[s_idx] = union
+
+        masks_by_frame: dict[int, np.ndarray] = {}
+        for orig_idx in range(frame_count):
+            s_idx = nearest_sampled_idx(orig_idx)
+            mask = masks_by_sampled.get(s_idx)
+            if mask is not None:
+                masks_by_frame[orig_idx] = mask
+
+        logger.info(
+            "Track: masks for %d/%d sampled frames, expanded to %d original frames",
+            len(masks_by_sampled), len(sampled_orig), len(masks_by_frame),
+        )
+        return width, height, frame_count, fps, masks_by_frame
+    finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
